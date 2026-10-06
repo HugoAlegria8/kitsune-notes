@@ -1,0 +1,31 @@
+# Kitsune Notes - reescritura de URL para el front controller
+#
+# Este fichero es el que hace funcionar las URL limpias (/producto/...)
+# en Apache, que es el servidor habitual en hosting compartido.
+# Para Nginx, la equivalencia está documentada en el README.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Respeta el subdirectorio en el que esté desplegada la aplicación.
+    RewriteBase /
+
+    # Los ficheros y directorios existentes (CSS, JS, imágenes) se sirven tal cual.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # El resto de peticiones las atiende el front controller.
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Evita el listado de directorios.
+Options -Indexes
+
+# Cacheo de estáticos (no afecta al HTML generado).
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType image/svg+xml "access plus 30 days"
+</IfModule>
