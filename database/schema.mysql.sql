@@ -8,6 +8,11 @@
 --
 --  Las fechas se guardan como cadenas ISO-8601 (igual que en SQLite)
 --  para que el formato de los eventos sea idéntico en ambos motores.
+--
+--  Idiomas y monedas: igual que en schema.sql. Las columnas «_en» son la
+--  traducción al inglés de los datos maestros (opcionales: vacías o NULL,
+--  la tienda muestra el texto en español). Las de tipo TEXT admiten NULL
+--  porque MySQL no permite un valor por defecto en ese tipo.
 -- =====================================================================
 
 CREATE TABLE categories (
@@ -17,7 +22,10 @@ CREATE TABLE categories (
     tagline     VARCHAR(190) NOT NULL DEFAULT '',
     description TEXT         NOT NULL,
     icon        VARCHAR(40)  NOT NULL DEFAULT '',
-    sort_order  INT          NOT NULL DEFAULT 0
+    sort_order  INT          NOT NULL DEFAULT 0,
+    name_en        VARCHAR(120) NOT NULL DEFAULT '',
+    tagline_en     VARCHAR(190) NOT NULL DEFAULT '',
+    description_en TEXT         NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE design_lines (
@@ -30,7 +38,10 @@ CREATE TABLE design_lines (
     description   TEXT         NOT NULL,
     color_primary VARCHAR(16)  NOT NULL DEFAULT '#ff8fb8',
     color_soft    VARCHAR(16)  NOT NULL DEFAULT '#ffe3ee',
-    sort_order    INT          NOT NULL DEFAULT 0
+    sort_order    INT          NOT NULL DEFAULT 0,
+    mascot_en      VARCHAR(60)  NOT NULL DEFAULT '',
+    tagline_en     VARCHAR(190) NOT NULL DEFAULT '',
+    description_en TEXT         NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE products (
@@ -55,6 +66,11 @@ CREATE TABLE products (
     is_featured      TINYINT(1)   NOT NULL DEFAULT 0,
     created_at       VARCHAR(40)  NOT NULL,
     updated_at       VARCHAR(40)  NULL,
+    name_en          VARCHAR(190) NOT NULL DEFAULT '',
+    origin_en        VARCHAR(80)  NOT NULL DEFAULT '',
+    summary_en       VARCHAR(400) NOT NULL DEFAULT '',
+    description_en   TEXT         NULL,
+    specs_json_en    TEXT         NULL,
     CONSTRAINT fk_products_category    FOREIGN KEY (category_id)    REFERENCES categories(id),
     CONSTRAINT fk_products_design_line FOREIGN KEY (design_line_id) REFERENCES design_lines(id),
     INDEX idx_products_category (category_id),
@@ -102,6 +118,9 @@ CREATE TABLE orders (
     customer_id          INT UNSIGNED NOT NULL,
     status               VARCHAR(40)  NOT NULL,
     currency             VARCHAR(4)   NOT NULL DEFAULT 'EUR',
+    locale               VARCHAR(5)   NOT NULL DEFAULT 'es',
+    fx_rate_micros       INT NOT NULL DEFAULT 1000000,
+    total_base_cents     INT NOT NULL DEFAULT 0,
     items_total_cents    INT NOT NULL DEFAULT 0,
     discount_cents       INT NOT NULL DEFAULT 0,
     shipping_cents       INT NOT NULL DEFAULT 0,
@@ -186,7 +205,8 @@ CREATE TABLE support_tickets (
     subject         VARCHAR(190) NOT NULL,
     message         TEXT         NOT NULL,
     status          VARCHAR(20)  NOT NULL DEFAULT 'abierta',
-    created_at      VARCHAR(40)  NOT NULL
+    created_at      VARCHAR(40)  NOT NULL,
+    locale          VARCHAR(5)   NOT NULL DEFAULT 'es'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Factura de un pedido pagado: documento inmutable con copia congelada en

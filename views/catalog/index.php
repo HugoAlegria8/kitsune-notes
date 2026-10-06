@@ -19,21 +19,21 @@ $queryFor = function (array $overrides) use ($filters): string {
     return $this->url('/catalogo') . ($query === [] ? '' : '?' . http_build_query($query));
 };
 ?>
-<nav class="migas" aria-label="Migas de pan">
-    <a href="<?= $this->url('/') ?>">Inicio</a><span aria-hidden="true">♡</span><?= $this->e($heading) ?>
+<nav class="migas" aria-label="<?= $this->t('Migas de pan') ?>">
+    <a href="<?= $this->url('/') ?>"><?= $this->t('Inicio') ?></a><span aria-hidden="true">♡</span><?= $this->e($heading) ?>
 </nav>
 
 <div class="catalogo">
     <aside class="filtros" aria-labelledby="titulo-filtros">
-        <h2 id="titulo-filtros">Filtrar</h2>
+        <h2 id="titulo-filtros"><?= $this->t('Filtrar') ?></h2>
 
         <div class="filtros__grupo">
-            <h3>Categoría</h3>
+            <h3><?= $this->t('Categoría') ?></h3>
             <ul>
                 <li>
                     <a href="<?= $queryFor(['categoria' => '']) ?>"
                        aria-current="<?= ($filters['categoria'] ?? '') === '' ? 'true' : 'false' ?>">
-                        <span>Todas</span>
+                        <span><?= $this->t('Todas') ?></span>
                     </a>
                 </li>
                 <?php foreach ($categories as $category): ?>
@@ -49,12 +49,12 @@ $queryFor = function (array $overrides) use ($filters): string {
         </div>
 
         <div class="filtros__grupo">
-            <h3>Colección</h3>
+            <h3><?= $this->t('Colección') ?></h3>
             <ul>
                 <li>
                     <a href="<?= $queryFor(['coleccion' => '']) ?>"
                        aria-current="<?= ($filters['coleccion'] ?? '') === '' ? 'true' : 'false' ?>">
-                        <span>Todas</span>
+                        <span><?= $this->t('Todas') ?></span>
                     </a>
                 </li>
                 <?php foreach ($designLines as $line): ?>
@@ -73,7 +73,7 @@ $queryFor = function (array $overrides) use ($filters): string {
         </div>
 
         <?php if (array_filter($filters)): ?>
-            <a class="btn btn--secundario btn--pequeno btn--bloque" href="<?= $this->url('/catalogo') ?>">Quitar filtros</a>
+            <a class="btn btn--secundario btn--pequeno btn--bloque" href="<?= $this->url('/catalogo') ?>"><?= $this->t('Quitar filtros') ?></a>
         <?php endif; ?>
     </aside>
 
@@ -81,7 +81,7 @@ $queryFor = function (array $overrides) use ($filters): string {
         <?php if ($collection !== null): ?>
             <div class="cabecera-coleccion" style="--c-suave: <?= $this->e($collection['color_soft']) ?>">
                 <img src="<?= $this->asset('assets/img/mascotas/' . $collection['slug'] . '.svg') ?>"
-                     alt="<?= $this->e($collection['name']) ?>, el <?= $this->e($collection['mascot']) ?> de la colección" width="110" height="110">
+                     alt="<?= $this->t('{nombre}, el {mascota} de la colección', ['nombre' => $collection['name'], 'mascota' => $collection['mascot']]) ?>" width="110" height="110">
                 <div>
                     <h1><?= $this->e($heading) ?></h1>
                     <p><strong><?= $this->e($collection['tagline']) ?>.</strong> <?= $this->e($intro) ?></p>
@@ -96,9 +96,10 @@ $queryFor = function (array $overrides) use ($filters): string {
 
         <div class="barra-orden">
             <p class="resultado">
-                <?= count($products) ?> <?= count($products) === 1 ? 'cosita mona' : 'cositas monas' ?>
                 <?php if (($filters['q'] ?? '') !== ''): ?>
-                    para «<?= $this->e($filters['q']) ?>»
+                    <?= $this->tn('{n} cosita mona para «{busqueda}»', '{n} cositas monas para «{busqueda}»', count($products), ['busqueda' => $filters['q']]) ?>
+                <?php else: ?>
+                    <?= $this->tn('{n} cosita mona', '{n} cositas monas', count($products)) ?>
                 <?php endif; ?>
             </p>
 
@@ -108,24 +109,24 @@ $queryFor = function (array $overrides) use ($filters): string {
                         <input type="hidden" name="<?= $hidden ?>" value="<?= $this->e($filters[$hidden]) ?>">
                     <?php endif; ?>
                 <?php endforeach; ?>
-                <label for="orden">Ordenar por</label>
+                <label for="orden"><?= $this->t('Ordenar por') ?></label>
                 <select name="orden" id="orden" onchange="this.form.submit()">
-                    <option value="">Recomendado</option>
-                    <option value="precio_asc"  <?= ($filters['orden'] ?? '') === 'precio_asc' ? 'selected' : '' ?>>Precio: de menor a mayor</option>
-                    <option value="precio_desc" <?= ($filters['orden'] ?? '') === 'precio_desc' ? 'selected' : '' ?>>Precio: de mayor a menor</option>
-                    <option value="nombre"      <?= ($filters['orden'] ?? '') === 'nombre' ? 'selected' : '' ?>>Nombre (A-Z)</option>
-                    <option value="novedades"   <?= ($filters['orden'] ?? '') === 'novedades' ? 'selected' : '' ?>>Novedades</option>
+                    <option value=""><?= $this->t('Recomendado') ?></option>
+                    <option value="precio_asc"  <?= ($filters['orden'] ?? '') === 'precio_asc' ? 'selected' : '' ?>><?= $this->t('Precio: de menor a mayor') ?></option>
+                    <option value="precio_desc" <?= ($filters['orden'] ?? '') === 'precio_desc' ? 'selected' : '' ?>><?= $this->t('Precio: de mayor a menor') ?></option>
+                    <option value="nombre"      <?= ($filters['orden'] ?? '') === 'nombre' ? 'selected' : '' ?>><?= $this->t('Nombre (A-Z)') ?></option>
+                    <option value="novedades"   <?= ($filters['orden'] ?? '') === 'novedades' ? 'selected' : '' ?>><?= $this->t('Novedades') ?></option>
                 </select>
-                <noscript><button class="btn btn--secundario btn--pequeno" type="submit">Aplicar</button></noscript>
+                <noscript><button class="btn btn--secundario btn--pequeno" type="submit"><?= $this->t('Aplicar') ?></button></noscript>
             </form>
         </div>
 
         <?php if ($products === []): ?>
             <div class="vacio tarjeta">
                 <img class="vacio__mascota" src="<?= $this->asset('assets/img/mascotas/neko.svg') ?>" alt="" width="150" height="112">
-                <h2>No hemos encontrado nada <span class="kaomoji">(｡•́︿•̀｡)</span></h2>
-                <p>Prueba con otra búsqueda o quita algún filtro.</p>
-                <a class="btn btn--primario" href="<?= $this->url('/catalogo') ?>">Ver todo el catálogo</a>
+                <h2><?= $this->t('No hemos encontrado nada') ?> <span class="kaomoji">(｡•́︿•̀｡)</span></h2>
+                <p><?= $this->t('Prueba con otra búsqueda o quita algún filtro.') ?></p>
+                <a class="btn btn--primario" href="<?= $this->url('/catalogo') ?>"><?= $this->t('Ver todo el catálogo') ?></a>
             </div>
         <?php else: ?>
             <div class="rejilla-productos">

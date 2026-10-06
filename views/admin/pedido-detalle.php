@@ -14,6 +14,12 @@
  * @var bool                       $canInvoice
  */
 $badge = $this->statusBadge((string) $order['status']);
+
+// Moneda e idioma de la compra. Los importes del pedido se muestran siempre en
+// SU moneda; si no es el euro, se añade el contravalor que se guardó con el pedido.
+$moneda     = (string) $order['currency'];
+$monedaBase = $this->app()->currency()->base();
+$idioma     = $this->app()->translator()->info('label', (string) ($order['locale'] ?? 'es')) ?: (string) ($order['locale'] ?? 'es');
 ?>
 <div class="admin__cabecera">
     <div>
@@ -24,6 +30,11 @@ $badge = $this->statusBadge((string) $order['status']);
         <p style="margin:0; color:var(--frambuesa-suave)">
             Creado el <?= $this->date($order['created_at']) ?> ·
             Última actualización <?= $this->date($order['updated_at']) ?>
+        </p>
+        <p style="margin:.25rem 0 0; color:var(--frambuesa-suave); font-size:.9rem">
+            Idioma de la compra: <strong><?= $this->e($idioma) ?></strong> ·
+            Moneda: <strong><?= $this->e($moneda) ?></strong>.
+            Los correos y la factura de este pedido salen en ese idioma y en esa moneda.
         </p>
     </div>
     <span class="insignia insignia--<?= $this->e($badge['tone']) ?>" style="padding:.5rem 1.1rem; font-size:.92rem">
@@ -55,9 +66,9 @@ $badge = $this->statusBadge((string) $order['status']);
                                     <?= $this->e($line['name']) ?><br>
                                     <span style="font-size:.8rem; color:var(--frambuesa-tenue)"><?= $this->e($line['design_line']) ?></span>
                                 </td>
-                                <td class="num"><?= $this->money((int) $line['unit_price_cents']) ?></td>
+                                <td class="num"><?= $this->money((int) $line['unit_price_cents'], $moneda) ?></td>
                                 <td class="num"><?= (int) $line['quantity'] ?></td>
-                                <td class="num"><?= $this->money((int) $line['line_total_cents']) ?></td>
+                                <td class="num"><?= $this->money((int) $line['line_total_cents'], $moneda) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -196,7 +207,7 @@ $badge = $this->statusBadge((string) $order['status']);
                     <p style="margin:0 0 .8rem">
                         <strong><?= $this->e($invoice['number']) ?></strong><br>
                         <span style="font-size:.88rem; color:var(--frambuesa-suave)">
-                            Expedida el <?= $this->date($invoice['issued_at']) ?> · <?= $this->money((int) $invoice['total_cents']) ?>
+                            Expedida el <?= $this->date($invoice['issued_at']) ?> · <?= $this->money((int) $invoice['total_cents'], $moneda) ?>
                         </span>
                     </p>
                     <p style="margin:0 0 1rem">
@@ -249,26 +260,37 @@ $badge = $this->statusBadge((string) $order['status']);
         <div class="panel">
             <div class="panel__cabecera"><h2>Importe</h2></div>
             <div class="panel__cuerpo">
-                <div class="resumen__fila"><span>Artículos</span><span><?= $this->money((int) $order['items_total_cents']) ?></span></div>
+                <div class="resumen__fila"><span>Artículos</span><span><?= $this->money((int) $order['items_total_cents'], $moneda) ?></span></div>
                 <?php if ((int) $order['discount_cents'] > 0): ?>
                     <div class="resumen__fila resumen__fila--descuento">
                         <span>Descuento <?= $this->e($order['coupon_code']) ?></span>
-                        <span>−<?= $this->money((int) $order['discount_cents']) ?></span>
+                        <span>−<?= $this->money((int) $order['discount_cents'], $moneda) ?></span>
                     </div>
                 <?php endif; ?>
-                <div class="resumen__fila"><span>Envío</span><span><?= $this->money((int) $order['shipping_cents']) ?></span></div>
+                <div class="resumen__fila"><span>Envío</span><span><?= $this->money((int) $order['shipping_cents'], $moneda) ?></span></div>
                 <?php if ((int) $order['giftwrap_cents'] > 0): ?>
-                    <div class="resumen__fila"><span>Envoltorio</span><span><?= $this->money((int) $order['giftwrap_cents']) ?></span></div>
+                    <div class="resumen__fila"><span>Envoltorio</span><span><?= $this->money((int) $order['giftwrap_cents'], $moneda) ?></span></div>
                 <?php endif; ?>
                 <div class="resumen__fila" style="font-size:.85rem; color:var(--frambuesa-tenue)">
-                    <span>Base imponible</span><span><?= $this->money((int) $order['taxable_base_cents']) ?></span>
+                    <span>Base imponible</span><span><?= $this->money((int) $order['taxable_base_cents'], $moneda) ?></span>
                 </div>
                 <div class="resumen__fila" style="font-size:.85rem; color:var(--frambuesa-tenue)">
-                    <span>IVA</span><span><?= $this->money((int) $order['tax_cents']) ?></span>
+                    <span>IVA</span><span><?= $this->money((int) $order['tax_cents'], $moneda) ?></span>
                 </div>
                 <div class="resumen__fila resumen__fila--total">
-                    <span>Total</span><span><?= $this->money((int) $order['total_cents']) ?></span>
+                    <span>Total</span><span><?= $this->money((int) $order['total_cents'], $moneda) ?></span>
                 </div>
+                <?php if ($moneda !== $monedaBase): ?>
+                    <div class="resumen__fila" style="font-size:.85rem; color:var(--frambuesa-tenue)">
+                        <span>Contravalor en euros</span>
+                        <span><?= $this->money((int) $order['total_base_cents'], $monedaBase) ?></span>
+                    </div>
+                    <p class="pista" style="margin:.5rem 0 0; font-size:.82rem">
+                        Tipo de cambio aplicado al crear el pedido:
+                        <?= $this->e($this->app()->currency()->rateLabel($moneda, (int) $order['fx_rate_micros'])) ?>
+                        (tipo fijo de demostración). El panel de control suma este contravalor.
+                    </p>
+                <?php endif; ?>
             </div>
         </div>
     </div>

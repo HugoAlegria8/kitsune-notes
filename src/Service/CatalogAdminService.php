@@ -28,6 +28,9 @@ final class CatalogAdminService
 {
     public const ORIGINS = ['Japón', 'Corea del Sur'];
 
+    /** El país de origen es una lista cerrada: su versión en inglés se pone sola. */
+    private const ORIGINS_EN = ['Japón' => 'Japan', 'Corea del Sur' => 'South Korea'];
+
     private const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
     private const ALLOWED_MIME = [
@@ -52,6 +55,9 @@ final class CatalogAdminService
         'price_cents' => 'precio_cents', 'compare_at_cents' => 'precio_anterior_cents',
         'stock' => 'stock', 'weight_grams' => 'peso_gramos', 'image_path' => 'imagen',
         'is_active' => 'activo', 'is_featured' => 'destacado',
+        // Versión en inglés de los textos (opcional)
+        'name_en' => 'nombre_en', 'origin_en' => 'origen_en', 'summary_en' => 'resumen_en',
+        'description_en' => 'descripcion_en', 'specs_json_en' => 'especificaciones_en',
     ];
 
     public function __construct(
@@ -251,6 +257,12 @@ final class CatalogAdminService
                 'resumen'         => 'requerido|min:20|max:300',
                 'descripcion'     => 'requerido|min:40|max:3000',
                 'especificaciones'=> 'max:2000',
+                // Versión en inglés: todo opcional. Lo que quede vacío se
+                // muestra en español en la tienda en inglés.
+                'nombre_en'           => 'min:3|max:120',
+                'resumen_en'          => 'max:300',
+                'descripcion_en'      => 'max:3000',
+                'especificaciones_en' => 'max:2000',
                 'precio'          => 'requerido|importe',
                 'precio_anterior' => 'importe',
                 'stock'           => 'requerido|entre:0,99999',
@@ -267,6 +279,10 @@ final class CatalogAdminService
                 'resumen'         => 'Resumen',
                 'descripcion'     => 'Descripción',
                 'especificaciones'=> 'Ficha técnica',
+                'nombre_en'           => 'Nombre en inglés',
+                'resumen_en'          => 'Resumen en inglés',
+                'descripcion_en'      => 'Descripción en inglés',
+                'especificaciones_en' => 'Ficha técnica en inglés',
                 'precio'          => 'Precio',
                 'precio_anterior' => 'Precio anterior',
                 'stock'           => 'Stock',
@@ -323,7 +339,8 @@ final class CatalogAdminService
         }
 
         // --- Ficha técnica «Clave: valor» -------------------------------
-        $specs = $this->parseSpecs((string) ($input['especificaciones'] ?? ''), $errors);
+        $specs   = $this->parseSpecs((string) ($input['especificaciones'] ?? ''), $errors);
+        $specsEn = $this->parseSpecs((string) ($input['especificaciones_en'] ?? ''), $errors, 'especificaciones_en');
 
         // --- Imagen -----------------------------------------------------
         if ($upload !== null) {
@@ -351,6 +368,12 @@ final class CatalogAdminService
                 'summary'          => trim((string) ($input['resumen'] ?? '')),
                 'description'      => trim((string) ($input['descripcion'] ?? '')),
                 'specs_json'       => (string) json_encode($specs, JSON_UNESCAPED_UNICODE),
+                // Versión en inglés. Vacío = la tienda en inglés usa el texto en español.
+                'name_en'          => trim((string) ($input['nombre_en'] ?? '')),
+                'origin_en'        => self::ORIGINS_EN[(string) ($input['origen'] ?? '')] ?? '',
+                'summary_en'       => trim((string) ($input['resumen_en'] ?? '')),
+                'description_en'   => trim((string) ($input['descripcion_en'] ?? '')),
+                'specs_json_en'    => $specsEn === [] ? '' : (string) json_encode($specsEn, JSON_UNESCAPED_UNICODE),
                 'price_cents'      => (int) $price,
                 'compare_at_cents' => $compare,
                 'stock'            => (int) ($input['stock'] ?? 0),
@@ -363,23 +386,24 @@ final class CatalogAdminService
 
     /**
      * @param array<string, list<string>> $errors
+     * @param string $field campo del formulario al que se apuntan los errores
      * @return array<string, string>
      */
-    private function parseSpecs(string $text, array &$errors): array
+    private function parseSpecs(string $text, array &$errors, string $field = 'especificaciones'): array
     {
         $specs = [];
         $lines = array_filter(array_map('trim', preg_split('/\R/', $text) ?: []));
 
         foreach ($lines as $number => $line) {
             if (!str_contains($line, ':')) {
-                $errors['especificaciones'][] = 'Cada línea de la ficha técnica debe tener el formato «Clave: valor».';
+                $errors[$field][] = 'Cada línea de la ficha técnica debe tener el formato «Clave: valor».';
                 break;
             }
 
             [$key, $value] = array_map('trim', explode(':', $line, 2));
 
             if ($key === '' || $value === '') {
-                $errors['especificaciones'][] = 'Hay una línea de la ficha técnica sin clave o sin valor.';
+                $errors[$field][] = 'Hay una línea de la ficha técnica sin clave o sin valor.';
                 break;
             }
 
@@ -387,7 +411,7 @@ final class CatalogAdminService
         }
 
         if (count($specs) > 20) {
-            $errors['especificaciones'][] = 'La ficha técnica admite como máximo 20 líneas.';
+            $errors[$field][] = 'La ficha técnica admite como máximo 20 líneas.';
         }
 
         return $specs;

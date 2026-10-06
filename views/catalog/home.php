@@ -7,19 +7,24 @@
  * @var list<array<string, mixed>> $categories
  * @var list<array<string, mixed>> $designLines
  */
+// Importes de las «condiciones de compra» del final de la página. Se piden al motor de
+// precios para que salgan en la moneda del visitante (euros o libras), como en el carrito.
+$freeFromCents = $this->app()->pricing()->shippingMethods()['estandar']['free_from_cents'] ?? null;
+$giftwrapCents = $this->app()->pricing()->giftwrapCents();
+
+// Importe sin decimales cuando es redondo («35 €», no «35,00 €»), como en un titular.
+$shortMoney = fn (int $cents): string => (string) preg_replace('/[.,]00(?!\d)/', '', $this->money($cents));
 ?>
 <section class="heroe">
     <div>
-        <span class="heroe__eyebrow"><span class="kaomoji" aria-hidden="true">(◕‿◕)♡</span> Recién llegado de Japón y Corea</span>
-        <h1>Papelería que te hace <mark>sonreír</mark></h1>
+        <span class="heroe__eyebrow"><span class="kaomoji" aria-hidden="true">(◕‿◕)♡</span> <?= $this->t('Recién llegado de Japón y Corea') ?></span>
+        <h1><?= $this->th('Papelería que te hace <mark>sonreír</mark>') ?></h1>
         <p>
-            Cuadernos con orejitas, bolis con ositos, washi tape de fresas y agendas
-            con gatitos dormilones. Cuatro personajes, cuatro colecciones y mucho,
-            mucho kawaii para tu escritorio.
+            <?= $this->t('Cuadernos con orejitas, bolis con ositos, washi tape de fresas y agendas con gatitos dormilones. Cuatro personajes, cuatro colecciones y mucho, mucho kawaii para tu escritorio.') ?>
         </p>
         <div class="heroe__acciones">
-            <a class="btn btn--primario btn--grande" href="<?= $this->url('/catalogo') ?>">Ver el catálogo</a>
-            <a class="btn btn--secundario btn--grande" href="<?= $this->url('/colecciones') ?>">Conocer a los personajes</a>
+            <a class="btn btn--primario btn--grande" href="<?= $this->url('/catalogo') ?>"><?= $this->t('Ver el catálogo') ?></a>
+            <a class="btn btn--secundario btn--grande" href="<?= $this->url('/colecciones') ?>"><?= $this->t('Conocer a los personajes') ?></a>
         </div>
     </div>
     <div class="heroe__arte" aria-hidden="true">
@@ -30,10 +35,10 @@
 <section class="seccion" aria-labelledby="titulo-colecciones">
     <div class="seccion__cabecera">
         <div>
-            <h2 id="titulo-colecciones" class="titulo-deco">Elige tu personaje</h2>
-            <p>Cada colección es una línea de diseño con su mascota, su color y su estilo.</p>
+            <h2 id="titulo-colecciones" class="titulo-deco"><?= $this->t('Elige tu personaje') ?></h2>
+            <p><?= $this->t('Cada colección es una línea de diseño con su mascota, su color y su estilo.') ?></p>
         </div>
-        <a class="btn btn--secundario btn--pequeno" href="<?= $this->url('/colecciones') ?>">Ver colecciones</a>
+        <a class="btn btn--secundario btn--pequeno" href="<?= $this->url('/colecciones') ?>"><?= $this->t('Ver colecciones') ?></a>
     </div>
 
     <div class="rejilla-productos">
@@ -49,7 +54,7 @@
                         <span class="nombre-nativo" lang="<?= in_array($line['slug'], ['tokki', 'gom'], true) ? 'ko' : 'ja' ?>"><?= $this->e($line['native_name']) ?></span>
                     </div>
                     <p><?= $this->e($line['tagline']) ?></p>
-                    <span class="tarjeta-enlace__pie"><?= (int) $line['product_count'] ?> productos del <?= $this->e($line['mascot']) ?> →</span>
+                    <span class="tarjeta-enlace__pie"><?= $this->tn('{n} producto del {mascota}', '{n} productos del {mascota}', (int) $line['product_count'], ['mascota' => $line['mascot']]) ?> →</span>
                 </div>
             </a>
         <?php endforeach; ?>
@@ -59,10 +64,10 @@
 <section class="seccion" aria-labelledby="titulo-destacados">
     <div class="seccion__cabecera">
         <div>
-            <h2 id="titulo-destacados" class="titulo-deco">Los favoritos de la casa</h2>
-            <p>Lo que más se lleva esta temporada.</p>
+            <h2 id="titulo-destacados" class="titulo-deco"><?= $this->t('Los favoritos de la casa') ?></h2>
+            <p><?= $this->t('Lo que más se lleva esta temporada.') ?></p>
         </div>
-        <a class="btn btn--secundario btn--pequeno" href="<?= $this->url('/catalogo') ?>">Ver todo</a>
+        <a class="btn btn--secundario btn--pequeno" href="<?= $this->url('/catalogo') ?>"><?= $this->t('Ver todo') ?></a>
     </div>
 
     <div class="rejilla-productos">
@@ -75,8 +80,8 @@
 <section class="seccion" aria-labelledby="titulo-categorias">
     <div class="seccion__cabecera">
         <div>
-            <h2 id="titulo-categorias" class="titulo-deco">Compra por categoría</h2>
-            <p>Y si ya sabes lo que buscas, directo al grano.</p>
+            <h2 id="titulo-categorias" class="titulo-deco"><?= $this->t('Compra por categoría') ?></h2>
+            <p><?= $this->t('Y si ya sabes lo que buscas, directo al grano.') ?></p>
         </div>
     </div>
 
@@ -85,29 +90,31 @@
             <a class="tarjeta-enlace" href="<?= $this->url('/categoria/' . $category['slug']) ?>">
                 <h3><?= $this->e($category['name']) ?></h3>
                 <p><?= $this->e($category['tagline']) ?></p>
-                <span class="tarjeta-enlace__pie"><?= (int) $category['product_count'] ?> referencias →</span>
+                <span class="tarjeta-enlace__pie"><?= $this->tn('{n} referencia', '{n} referencias', (int) $category['product_count']) ?> →</span>
             </a>
         <?php endforeach; ?>
     </div>
 </section>
 
-<section class="seccion" aria-label="Condiciones de compra">
+<section class="seccion" aria-label="<?= $this->t('Condiciones de compra') ?>">
     <div class="confianza">
+        <?php if ($freeFromCents !== null): ?>
+            <div class="confianza__item">
+                <strong><?= $this->t('Envío gratis desde {importe}', ['importe' => $shortMoney((int) $freeFromCents)]) ?></strong>
+                <?= $this->t('Envío estándar simulado en 3-5 días laborables.') ?>
+            </div>
+        <?php endif; ?>
         <div class="confianza__item">
-            <strong>Envío gratis desde 35 €</strong>
-            Envío estándar simulado en 3-5 días laborables.
+            <strong><?= $this->t('Pago simulado seguro') ?></strong>
+            <?= $this->t('Pasarela de pruebas: nunca guardamos números de tarjeta.') ?>
         </div>
         <div class="confianza__item">
-            <strong>Pago simulado seguro</strong>
-            Pasarela de pruebas: nunca guardamos números de tarjeta.
+            <strong><?= $this->t('Envoltorio furoshiki') ?></strong>
+            <?= $this->t('Para regalar, por {importe} más.', ['importe' => $this->money($giftwrapCents)]) ?>
         </div>
         <div class="confianza__item">
-            <strong>Envoltorio furoshiki</strong>
-            Para regalar, por 1,50 € más.
-        </div>
-        <div class="confianza__item">
-            <strong>Te ayudamos</strong>
-            Incidencias con seguimiento por referencia.
+            <strong><?= $this->t('Te ayudamos') ?></strong>
+            <?= $this->t('Incidencias con seguimiento por referencia.') ?>
         </div>
     </div>
 </section>

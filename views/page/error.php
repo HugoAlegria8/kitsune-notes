@@ -15,7 +15,7 @@
     <h1 style="font-size:1.4rem"><?= $this->e($title) ?> <span class="kaomoji" aria-hidden="true">(⊙_⊙)?</span></h1>
     <p><?= $this->e($message) ?></p>
     <p style="display:flex; gap:.7rem; justify-content:center; flex-wrap:wrap; margin-top:1.2rem">
-        <a class="btn btn--primario" href="<?= $this->url('/') ?>">Volver a la portada</a>
-        <a class="btn btn--secundario" href="<?= $this->url('/catalogo') ?>">Ir al catálogo</a>
+        <a class="btn btn--primario" href="<?= $this->url('/') ?>"><?= $this->t('Volver a la portada') ?></a>
+        <a class="btn btn--secundario" href="<?= $this->url('/catalogo') ?>"><?= $this->t('Ir al catálogo') ?></a>
     </p>
 </div>

@@ -90,7 +90,10 @@ final class AdminController extends Controller
             'title'          => 'Panel de control',
             'counts'         => $orders->countsByStatus(),
             'totalOrders'    => $orders->count(),
-            'revenueCents'   => $orders->totalRevenueCents(),
+            // Acumulado en euros (contravalor de cada pedido) y su desglose por moneda.
+            'revenueCents'      => $orders->totalRevenueCents(),
+            'revenueByCurrency' => $orders->revenueByCurrency(),
+            'baseCurrency'      => $this->app->currency()->base(),
             'eventCounts'    => $this->app->eventsRepository()->countsByName(),
             'totalEvents'    => $this->app->eventsRepository()->count(),
             'recentOrders'   => $orders->search([], 8),

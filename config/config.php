@@ -58,16 +58,41 @@ return [
     ],
 
     // Cookies. La tienda solo usa cookies técnicas (la de sesión, kitsune_session,
-    // y la que recuerda que se ha leído el aviso de la portada), así que el aviso
-    // es informativo: no hay nada que aceptar o rechazar. Si algún día se añade
-    // analítica o publicidad, habría que sustituirlo por un banner de consentimiento.
+    // la que recuerda que se ha leído el aviso de la portada y la que recuerda el
+    // idioma cuando el visitante lo cambia), así que el aviso es informativo: no
+    // hay nada que aceptar o rechazar. Si algún día se añade analítica o
+    // publicidad, habría que sustituirlo por un banner de consentimiento.
     'privacy' => [
         'cookie_notice_name' => 'kitsune_aviso_cookies',
         'cookie_notice_days' => 180,
     ],
 
+    // Idiomas de la tienda. El español es el original: sus textos son la clave
+    // de traducción y no necesita catálogo. Cada idioma fija también la moneda
+    // en la que se compra. El back-office y el API solo existen en español.
+    'i18n' => [
+        'default'     => 'es',
+        // Cookie técnica que recuerda el idioma elegido con los botones ES/EN.
+        'cookie_name' => 'kitsune_idioma',
+        'cookie_days' => 180,
+        'locales'     => [
+            'es' => ['label' => 'Español', 'short' => 'ES', 'html' => 'es',    'currency' => 'EUR'],
+            'en' => ['label' => 'English', 'short' => 'EN', 'html' => 'en-GB', 'currency' => 'GBP'],
+        ],
+    ],
+
     'commerce' => [
+        // Moneda base: en ella están los precios del catálogo, los gastos de
+        // envío y los cupones. Los pedidos en otra moneda guardan además su
+        // contravalor en esta, para poder sumar ventas de monedas distintas.
         'currency'  => 'EUR',
+        // Otras monedas de venta, con su tipo de cambio respecto a la base
+        // (unidades de esa moneda por cada euro). Es un tipo FIJO de
+        // demostración, no un tipo oficial: se cambia con KN_FX_EUR_GBP y el
+        // que se aplica a cada pedido queda guardado en el propio pedido.
+        'currencies' => [
+            'GBP' => ['rate' => Env::get('KN_FX_EUR_GBP', '0.85')],
+        ],
         'tax_rate'  => 0.21,               // IVA general español
         'shipping'  => [
             'estandar' => [
@@ -158,7 +183,9 @@ return [
     ],
 
     'events' => [
-        'schema_version' => '1.0',
+        // 1.1: se añaden a la carga útil «idioma», «moneda» y los contravalores en
+        // euros de los importes. Es un cambio compatible: no se quita ni se renombra nada.
+        'schema_version' => '1.1',
         'source'         => 'kitsune-notes.web',
         // Los eventos se escriben simultáneamente en base de datos y en un
         // fichero JSON Lines por día, listo para ser ingerido por otro sistema.

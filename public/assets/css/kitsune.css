@@ -146,6 +146,9 @@ code {
     border: 0;
 }
 
+/* El atributo «hidden» manda aunque el elemento tenga un display propio (p. ej. .btn). */
+[hidden] { display: none !important; }
+
 /* 3. Estructura ------------------------------------------------------ */
 .contenedor {
     width: min(100% - 2rem, var(--ancho));
@@ -172,6 +175,52 @@ code {
 .aviso-prototipo a { color: var(--algodon); }
 
 .aviso-prototipo__corazon { color: var(--chicle); }
+
+/* Botones de idioma (ES / EN) de la franja superior. */
+.idiomas {
+    display: inline-flex;
+    gap: .3rem;
+    margin-left: .6rem;
+}
+
+.idiomas__opcion,
+.aviso-prototipo a.idiomas__opcion {
+    display: inline-block;
+    min-width: 2.2rem;
+    padding: .12rem .5rem;
+    border: 1.5px solid rgba(255, 255, 255, .7);
+    border-radius: 999px;
+    color: #fff;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    line-height: 1.4;
+    text-align: center;
+    text-decoration: none;
+}
+
+/* Los botones son pequeños a propósito, pero la zona que responde al dedo o al
+   ratón es mayor que el dibujo: se amplía con un pseudoelemento que no ocupa
+   sitio, así que la franja mide lo mismo. */
+.aviso-prototipo a.idiomas__opcion { position: relative; }
+
+.aviso-prototipo a.idiomas__opcion::after {
+    content: "";
+    position: absolute;
+    inset: -.5rem -.12rem;
+}
+
+.aviso-prototipo a.idiomas__opcion:hover,
+.aviso-prototipo a.idiomas__opcion:focus-visible {
+    background: rgba(255, 255, 255, .22);
+    border-color: #fff;
+}
+
+.idiomas__opcion--activa {
+    background: #fff;
+    border-color: #fff;
+    color: var(--frambuesa);
+}
 
 .cabecera {
     background: var(--superficie);
@@ -1174,6 +1223,10 @@ textarea[aria-invalid="true"] {
     margin: .9rem 0 0;
     line-height: 1.5;
 }
+
+/* Resumen del checkout mientras el servidor recalcula el total. */
+.resumen__vivo { transition: opacity .15s ease; }
+.resumen__vivo[aria-busy="true"] { opacity: .55; }
 
 .progreso-envio {
     background: var(--exito-suave);

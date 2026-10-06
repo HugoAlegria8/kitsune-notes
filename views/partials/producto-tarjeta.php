@@ -14,9 +14,9 @@ $stock = (int) $product['stock'];
                  alt="<?= $this->e($product['name']) ?>" loading="lazy" width="400" height="300">
         </a>
         <?php if ($product['compare_at_cents'] !== null): ?>
-            <span class="producto__etiqueta">¡Oferta!</span>
+            <span class="producto__etiqueta"><?= $this->t('¡Oferta!') ?></span>
         <?php elseif ($stock > 0 && $stock <= 20): ?>
-            <span class="producto__etiqueta producto__etiqueta--lila">¡Quedan poquitos!</span>
+            <span class="producto__etiqueta producto__etiqueta--lila"><?= $this->t('¡Quedan poquitos!') ?></span>
         <?php endif; ?>
     </div>
 
@@ -44,7 +44,7 @@ $stock = (int) $product['stock'];
                     <?php endif; ?>
                     <span class="precio"><?= $this->money((int) $product['price_cents']) ?></span>
                 </span>
-                <span class="precio-iva">IVA incluido</span>
+                <span class="precio-iva"><?= $this->t('IVA incluido') ?></span>
             </div>
 
             <?php if ($stock > 0): ?>
@@ -55,10 +55,10 @@ $stock = (int) $product['stock'];
                     <?php /* El botón solo dice «Añadir al carrito»; el producto al que se refiere se
                              anuncia a los lectores de pantalla como descripción (nombre de la tarjeta). */ ?>
                     <button class="btn btn--primario btn--pequeno" type="submit"
-                            aria-describedby="producto-nombre-<?= (int) $product['id'] ?>">Añadir al carrito</button>
+                            aria-describedby="producto-nombre-<?= (int) $product['id'] ?>"><?= $this->t('Añadir al carrito') ?></button>
                 </form>
             <?php else: ?>
-                <span class="insignia insignia--muted">Agotado</span>
+                <span class="insignia insignia--muted"><?= $this->t('Agotado') ?></span>
             <?php endif; ?>
         </div>
     </div>

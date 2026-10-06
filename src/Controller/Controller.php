@@ -7,6 +7,7 @@ namespace KitsuneNotes\Controller;
 use KitsuneNotes\Core\App;
 use KitsuneNotes\Core\Request;
 use KitsuneNotes\Core\Response;
+use KitsuneNotes\Core\Validator;
 
 /**
  * Comportamiento común a todos los controladores.
@@ -39,13 +40,41 @@ abstract class Controller
         return $this->redirect($fallback);
     }
 
-    protected function notFound(string $message = 'La página que buscas no existe.'): Response
+    /**
+     * Página 404. El mensaje llega ya traducido (los controladores lo pasan
+     * con $this->t()); sin mensaje se usa uno genérico.
+     */
+    protected function notFound(?string $message = null): Response
     {
         return $this->view('page/error', [
-            'title'   => 'Página no encontrada',
+            'title'   => $this->t('Página no encontrada'),
             'code'    => '404',
-            'message' => $message,
+            'message' => $message ?? $this->t('La página que buscas no existe.'),
         ], 'layout/main', 404);
+    }
+
+    /**
+     * Traduce al idioma activo un texto de interfaz escrito en español
+     * (títulos, mensajes flash…). Devuelve texto sin escapar: las plantillas
+     * lo escapan al imprimirlo.
+     *
+     * @param array<string, scalar|null> $params valores de los marcadores {clave}
+     */
+    protected function t(string $text, array $params = []): string
+    {
+        return $this->app->translator()->get($text, $params);
+    }
+
+    /**
+     * Valida un formulario de la tienda con los mensajes en el idioma activo.
+     *
+     * @param array<string, mixed>  $data
+     * @param array<string, string> $rules
+     * @param array<string, string> $labels nombres de los campos, ya traducidos con $this->t()
+     */
+    protected function validate(array $data, array $rules, array $labels = []): Validator
+    {
+        return new Validator($data, $rules, $labels, $this->app->translator());
     }
 
     /** Comprueba el token CSRF de un formulario. */

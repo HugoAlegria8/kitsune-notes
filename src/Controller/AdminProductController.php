@@ -259,12 +259,17 @@ final class AdminProductController extends Controller
      */
     private function inputFromProduct(array $product): array
     {
-        $specs = json_decode((string) $product['specs_json'], true);
-        $lines = [];
+        // Ficha técnica guardada en JSON → texto «Clave: valor», una por línea.
+        $specLines = static function (mixed $json): string {
+            $specs = json_decode((string) $json, true);
+            $lines = [];
 
-        foreach (is_array($specs) ? $specs : [] as $key => $value) {
-            $lines[] = $key . ': ' . $value;
-        }
+            foreach (is_array($specs) ? $specs : [] as $key => $value) {
+                $lines[] = $key . ': ' . $value;
+            }
+
+            return implode("\n", $lines);
+        };
 
         $euros = static fn (?int $cents): string => $cents === null
             ? ''
@@ -280,7 +285,12 @@ final class AdminProductController extends Controller
             'origen'           => $product['origin'],
             'resumen'          => $product['summary'],
             'descripcion'      => $product['description'],
-            'especificaciones' => implode("\n", $lines),
+            'especificaciones' => $specLines($product['specs_json']),
+            // Versión en inglés (puede estar vacía)
+            'nombre_en'           => (string) ($product['name_en'] ?? ''),
+            'resumen_en'          => (string) ($product['summary_en'] ?? ''),
+            'descripcion_en'      => (string) ($product['description_en'] ?? ''),
+            'especificaciones_en' => $specLines($product['specs_json_en'] ?? ''),
             'precio'           => $euros((int) $product['price_cents']),
             'precio_anterior'  => $euros($product['compare_at_cents'] !== null ? (int) $product['compare_at_cents'] : null),
             'stock'            => (string) $product['stock'],

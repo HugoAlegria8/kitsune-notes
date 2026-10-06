@@ -5,8 +5,8 @@
  * Lo incluye layout/main.php (justo antes del pie) cuando el controlador le pasa
  * `cookieNotice`; hoy solo lo hace la portada y solo mientras no se haya cerrado.
  *
- * La tienda solo usa cookies técnicas (sesión y recuerdo de este aviso), así que
- * no hay nada que aceptar o rechazar: basta con «Entendido». Sin JavaScript el
+ * La tienda solo usa cookies técnicas (sesión, recuerdo de este aviso e idioma
+ * elegido), así que no hay nada que aceptar o rechazar: basta con «Entendido». Sin JavaScript el
  * botón envía el formulario (PageController::acknowledgeCookies); con JavaScript,
  * kitsune.js guarda lo mismo sin recargar la página.
  *
@@ -14,7 +14,7 @@
  * @var array{name:string, days:int} $cookieNotice
  */
 ?>
-<section class="aviso-cookies" aria-label="Aviso de cookies"
+<section class="aviso-cookies" aria-label="<?= $this->t('Aviso de cookies') ?>"
          data-aviso-cookies data-cookie="<?= $this->e($cookieNotice['name']) ?>" data-dias="<?= (int) $cookieNotice['days'] ?>">
     <svg class="aviso-cookies__icono" viewBox="0 0 64 64" width="52" height="52" aria-hidden="true" focusable="false">
         <circle cx="32" cy="33" r="26" fill="#F6C98D" stroke="#5A2340" stroke-width="3"/>
@@ -31,14 +31,13 @@
     </svg>
 
     <p class="aviso-cookies__texto">
-        <strong>Usamos cookies, pero solo las necesarias.</strong>
-        Una de sesión para guardar tu carrito y proteger los formularios, y otra para recordar que has
-        visto este aviso. No hay cookies de publicidad ni de análisis.
-        <a href="<?= $this->url('/aviso-academico') ?>#cookies">Más información</a>
+        <strong><?= $this->t('Usamos cookies, pero solo las necesarias.') ?></strong>
+        <?= $this->t('Una de sesión para guardar tu carrito y proteger los formularios y otras dos para recordar este aviso y tu idioma. No hay cookies de publicidad ni de análisis.') ?>
+        <a href="<?= $this->url('/aviso-academico') ?>#cookies"><?= $this->t('Más información') ?></a>
     </p>
 
     <form class="aviso-cookies__accion" method="post" action="<?= $this->url('/cookies/entendido') ?>">
         <?= $this->csrf() ?>
-        <button class="btn btn--primario btn--pequeno" type="submit" data-cookies-cerrar>Entendido</button>
+        <button class="btn btn--primario btn--pequeno" type="submit" data-cookies-cerrar><?= $this->t('Entendido') ?></button>
     </form>
 </section>

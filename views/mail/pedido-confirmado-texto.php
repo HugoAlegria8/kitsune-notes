@@ -2,6 +2,9 @@
 /**
  * Versión en texto plano del correo de confirmación con factura.
  *
+ * Es text/plain: los textos se traducen con $tr() y NO con $this->t(), que
+ * además escapa HTML.
+ *
  * @var \KitsuneNotes\Core\View $this
  * @var array<string, mixed>     $order
  * @var array<string, mixed>     $invoice
@@ -9,29 +12,31 @@
  * @var string                   $invoiceUrl
  * @var string                   $orderUrl
  */
+$tr = fn (string $text, array $params = []): string => $this->app()->translator()->get($text, $params);
+
 $firstName = (string) strtok((string) $doc['buyer']['name'], ' ');
 
 $out = [
-    '¡Gracias por tu compra, ' . $firstName . '!',
+    $tr('¡Gracias por tu compra, {nombre}!', ['nombre' => $firstName]),
     '',
-    'Hemos recibido tu pedido ' . $order['reference'] . ' y el pago simulado se ha autorizado.',
-    'Tu factura es la ' . $invoice['number'] . ' y la tienes copiada más abajo.',
+    $tr('Hemos recibido tu pedido {referencia} y el pago simulado se ha autorizado.', ['referencia' => $order['reference']]),
+    $tr('Tu factura es la {factura} y la tienes copiada más abajo.', ['factura' => $invoice['number']]),
     '',
-    'Ver e imprimir la factura:',
+    $tr('Ver e imprimir la factura:'),
     $invoiceUrl,
     '',
-    'Consultar el estado del pedido (referencia + este correo):',
+    $tr('Consultar el estado del pedido (referencia + este correo):'),
     $orderUrl,
     '',
     $this->partial('mail/_factura-texto', ['doc' => $doc]),
     '',
-    'Con cariño,',
-    'Kitsune, Neko, Tokki y Gom',
+    $tr('Con cariño,'),
+    $tr('Kitsune, Neko, Tokki y Gom'),
     '',
     '-- ',
     !empty($realDelivery)
-        ? 'Prototipo académico sin actividad comercial real: pedido, pago y factura ficticios.'
-        : 'Prototipo académico: correo de prueba, no entregado a ningún buzón real.',
+        ? $tr('Prototipo académico sin actividad comercial real: pedido, pago y factura ficticios.')
+        : $tr('Prototipo académico: correo de prueba, no entregado a ningún buzón real.'),
 ];
 
 echo implode("\n", $out), "\n";

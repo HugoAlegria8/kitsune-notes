@@ -6,6 +6,9 @@
  * correo ignoran las hojas de estilo externas y no admiten grid ni flexbox.
  * Los colores son los de la web («fresa y nata») y cumplen contraste AA.
  *
+ * Idioma: el Notifier pinta cada correo con el idioma del pedido (o de la
+ * solicitud de soporte) ya activo, así que aquí basta con usar t().
+ *
  * @var \KitsuneNotes\Core\View $this
  * @var string                   $content
  * @var string                   $subject
@@ -15,7 +18,7 @@
  */
 ?>
 <!doctype html>
-<html lang="es">
+<html lang="<?= $this->e($this->app()->translator()->info('html') ?: 'es') ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -34,8 +37,8 @@
         <tr>
             <td align="center" style="padding:0 8px 14px; font-size:12px; line-height:1.5; color:#8A4A6A; font-weight:bold;">
                 <?= !empty($realDelivery)
-                    ? 'Prototipo académico sin actividad comercial real · pedido, pago y factura ficticios'
-                    : 'Prototipo académico · correo de prueba: no se ha entregado a ningún buzón real' ?>
+                    ? $this->t('Prototipo académico sin actividad comercial real · pedido, pago y factura ficticios')
+                    : $this->t('Prototipo académico · correo de prueba: no se ha entregado a ningún buzón real') ?>
             </td>
         </tr>
 
@@ -46,7 +49,7 @@
                         <td style="background:#FFD6E7; padding:20px 28px; border-bottom:3px solid #5A2340;">
                             <span style="font-size:26px; line-height:1.2; font-weight:bold; color:#5A2340;">Kitsune Notes</span>
                             <span style="font-size:22px; color:#D6336C;">&#9825;</span><br>
-                            <span style="font-size:13px; color:#8A4A6A; font-weight:bold;">papelería kawaii de Japón y Corea</span>
+                            <span style="font-size:13px; color:#8A4A6A; font-weight:bold;"><?= $this->t('papelería kawaii de Japón y Corea') ?></span>
                         </td>
                     </tr>
                     <tr>
@@ -58,11 +61,12 @@
 
         <tr>
             <td align="center" style="padding:18px 12px 0; font-size:12px; line-height:1.6; color:#8A4A6A;">
-                <strong><?= $this->e($company['name'] ?? '') ?></strong> · NIF <?= $this->e($company['tax_id'] ?? '') ?><br>
+                <strong><?= $this->e($company['name'] ?? '') ?></strong> · <?= $this->t('NIF {nif}', ['nif' => $company['tax_id'] ?? '']) ?><br>
                 <?= $this->e($company['address'] ?? '') ?>, <?= $this->e($company['postal_code'] ?? '') ?>
                 <?= $this->e($company['city'] ?? '') ?><br>
-                <?= $this->e($company['fictional'] ?? '') ?><br>
-                Recibes este mensaje porque se ha realizado una operación de prueba con esta dirección.
+                <?php /* El aviso viene de la configuración (en español): se traduce al imprimirlo. */ ?>
+                <?= $this->t((string) ($company['fictional'] ?? '')) ?><br>
+                <?= $this->t('Recibes este mensaje porque se ha realizado una operación de prueba con esta dirección.') ?>
             </td>
         </tr>
     </table>
