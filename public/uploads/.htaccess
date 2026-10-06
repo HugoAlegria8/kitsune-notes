@@ -1,0 +1,12 @@
+# Carpeta de imágenes subidas desde el back-office.
+# Aunque la aplicación solo guarda PNG, JPEG y WebP con nombre aleatorio,
+# se impide ejecutar cualquier script aquí como defensa adicional.
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+RemoveHandler .php .phtml .phar
+RemoveType .php .phtml .phar
+<FilesMatch "\.(php|phtml|phar|pl|py|cgi|sh)$">
+    Require all denied
+</FilesMatch>
+Options -Indexes -ExecCGI

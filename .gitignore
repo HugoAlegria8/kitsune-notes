@@ -1,0 +1,25 @@
+# Credenciales y configuración local: nunca se versionan.
+.env
+
+# Base de datos generada por el instalador.
+storage/database/*.sqlite
+storage/database/*.sqlite-shm
+storage/database/*.sqlite-wal
+
+# Registros de eventos y de errores generados en ejecución.
+storage/events/*.jsonl
+storage/logs/*.log
+
+# Artefactos del sistema operativo y del editor.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Copias comprimidas de la entrega.
+*.zip
+
+# Imágenes subidas desde el back-office (se conserva la carpeta).
+public/uploads/productos/*
+!public/uploads/productos/.gitkeep

@@ -1,0 +1,2 @@
+# Este directorio debe existir y ser escribible por el servidor web.
+# Su contenido (base de datos, eventos y logs) no se versiona.
