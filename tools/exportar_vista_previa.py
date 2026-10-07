@@ -271,7 +271,8 @@ def reescribir(html: str, titulo_pagina: str) -> str:
         for el in sopa.find_all(etiqueta):
             valor = el.get(attr)
             if valor and valor.startswith("/assets/"):
-                el[attr] = valor.lstrip("/")
+                # Sin la huella «?v=…» de CSS y JS: en la copia estática no hace falta.
+                el[attr] = valor.lstrip("/").split("?")[0]
 
     for el in sopa.find_all(attrs={"data-vista": True}):
         if el["data-vista"].startswith("/assets/"):

@@ -4,7 +4,9 @@
  *
  * @var \KitsuneNotes\Core\View $this
  * @var list<array<string, mixed>>          $items
- * @var array<string, mixed>                $summary
+ * @var array<string, mixed>                $summary          resumen de lo que hay elegido ahora
+ * @var list<array{method:string, gift_wrap:bool, summary:array<string, mixed>}> $summaryVariants
+ *                                           resumen de cada combinación de envío y envoltorio
  * @var array<string, array<string, mixed>> $shippingMethods
  * @var int                                 $giftwrapCents
  * @var array<string, list<string>>         $errors
@@ -34,7 +36,7 @@ $error = static fn (string $field): ?string => $errors[$field][0] ?? null;
     </div>
 <?php endif; ?>
 
-<form method="post" action="<?= $this->url('/checkout') ?>" novalidate>
+<form method="post" action="<?= $this->url('/checkout') ?>" novalidate data-checkout>
     <?= $this->csrf() ?>
 
     <div class="pagina-dos-columnas">
@@ -137,7 +139,7 @@ $error = static fn (string $field): ?string => $errors[$field][0] ?? null;
                 <?php foreach ($shippingMethods as $key => $method): ?>
                     <label class="opcion-radio">
                         <input type="radio" name="metodo_envio" value="<?= $this->e($key) ?>"
-                               <?= $value('metodo_envio', (string) $summary['shipping_method']) === $key ? 'checked' : '' ?>>
+                               <?= (string) $summary['shipping_method'] === (string) $key ? 'checked' : '' ?>>
                         <span class="opcion-radio__texto">
                             <span class="opcion-radio__titulo"><?= $this->e($method['label']) ?></span>
                             <span class="opcion-radio__detalle"><?= $this->e($method['description']) ?></span>
@@ -179,32 +181,30 @@ $error = static fn (string $field): ?string => $errors[$field][0] ?? null;
         </div>
 
         <aside class="resumen" aria-label="<?= $this->t('Resumen del pedido') ?>">
-            <?php /* El resumen se repinta al cambiar el método de envío o el envoltorio: kitsune.js
-                     pide el fragmento ya calculado a /checkout/resumen (el navegador no suma nada). */ ?>
-            <div class="resumen__vivo" data-resumen-vivo data-url="<?= $this->url('/checkout/resumen') ?>"
-                 aria-live="polite">
-                <?= $this->partial('partials/resumen', ['summary' => $summary]) ?>
+            <?php /* El total cambia en cuanto se elige otro envío o se marca el envoltorio, sin botón
+                     y sin esperar al servidor. La página trae ya calculadas todas las combinaciones,
+                     una por bloque, y solo se ve la que corresponde a lo marcado: las demás llevan
+                     «hidden». Lo deciden las reglas :has() de kitsune.css (también sin JavaScript) y,
+                     donde no existen, kitsune.js. El navegador no suma nada. */ ?>
+            <div class="resumen__vivo" data-resumen-vivo aria-live="polite">
+                <?php foreach ($summaryVariants as $variant): ?>
+                    <?php $actual = $variant['method'] === (string) $summary['shipping_method']
+                        && $variant['gift_wrap'] === !empty($summary['gift_wrap']); ?>
+                    <div class="resumen__variante" data-envio="<?= $this->e($variant['method']) ?>"
+                         data-envoltorio="<?= $variant['gift_wrap'] ? '1' : '0' ?>"<?= $actual ? '' : ' hidden' ?>>
+                        <?= $this->partial('partials/resumen', ['summary' => $variant['summary']]) ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
 
             <button class="btn btn--primario btn--grande btn--bloque" type="submit" style="margin-top:1rem">
                 <?= $this->t('Ir al pago simulado') ?>
             </button>
 
-            <?php /* Alternativa sin JavaScript. Va después del botón principal para que la tecla
-                     Intro en un campo siga llevando al pago; kitsune.js lo oculta al activarse. */ ?>
-            <button class="btn btn--secundario btn--pequeno btn--bloque" type="submit" name="accion"
-                    value="recalcular" formnovalidate data-recalcular style="margin-top:.6rem">
-                <?= $this->t('Actualizar total') ?>
-            </button>
-
+            <?php /* Solo se enseña donde el cambio es de verdad automático: con :has() o con JavaScript. */ ?>
             <p class="resumen__nota" data-nota-vivo hidden>
                 <?= $this->t('El total se actualiza al cambiar el método de envío o el envoltorio.') ?>
             </p>
-            <noscript>
-                <p class="resumen__nota">
-                    <?= $this->t('Si cambias el método de envío o el envoltorio, pulsa «Actualizar total» para ver el importe nuevo.') ?>
-                </p>
-            </noscript>
 
             <details style="margin-top:1rem; font-size:.85rem">
                 <summary><?= $this->tn('{n} línea en el pedido', '{n} líneas en el pedido', count($items)) ?></summary>

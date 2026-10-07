@@ -228,11 +228,8 @@ return [
     'Entiendo que <strong>Kitsune Notes es un prototipo académico</strong>, que el pago es simulado y que no se producirá ningún cobro ni ningún envío real.'
         => 'I understand that <strong>Kitsune Notes is an academic prototype</strong>, that payment is simulated and that no real charge or delivery will take place.',
     'Ir al pago simulado' => 'Go to simulated payment',
-    'Actualizar total' => 'Update total',
     'El total se actualiza al cambiar el método de envío o el envoltorio.'
         => 'The total updates when you change the delivery method or the gift wrap.',
-    'Si cambias el método de envío o el envoltorio, pulsa «Actualizar total» para ver el importe nuevo.'
-        => 'If you change the delivery method or the gift wrap, press “Update total” to see the new amount.',
     '{n} línea en el pedido' => '{n} line in the order',
     '{n} líneas en el pedido' => '{n} lines in the order',
 

@@ -1224,9 +1224,21 @@ textarea[aria-invalid="true"] {
     line-height: 1.5;
 }
 
-/* Resumen del checkout mientras el servidor recalcula el total. */
-.resumen__vivo { transition: opacity .15s ease; }
-.resumen__vivo[aria-busy="true"] { opacity: .55; }
+/* Resumen del checkout. La página trae ya calculado por el servidor el resumen de cada
+   combinación de envío y envoltorio, un bloque por combinación, y solo se ve uno: los demás
+   llevan el atributo «hidden». Con :has() el propio formulario (data-checkout) decide cuál se ve, así que el
+   total cambia al momento, sin botón y también sin JavaScript. Hay una regla por método de
+   envío (los de config/config.php). Donde no existe :has(), kitsune.js mueve el «hidden». */
+@supports selector(:has(*)) {
+    [data-checkout]:has(input[name="metodo_envio"]:checked) .resumen__variante { display: none !important; }
+
+    [data-checkout]:has(input[name="metodo_envio"][value="estandar"]:checked):has(input[name="envoltorio"]:not(:checked)) .resumen__variante[data-envio="estandar"][data-envoltorio="0"],
+    [data-checkout]:has(input[name="metodo_envio"][value="estandar"]:checked):has(input[name="envoltorio"]:checked) .resumen__variante[data-envio="estandar"][data-envoltorio="1"],
+    [data-checkout]:has(input[name="metodo_envio"][value="express"]:checked):has(input[name="envoltorio"]:not(:checked)) .resumen__variante[data-envio="express"][data-envoltorio="0"],
+    [data-checkout]:has(input[name="metodo_envio"][value="express"]:checked):has(input[name="envoltorio"]:checked) .resumen__variante[data-envio="express"][data-envoltorio="1"] { display: block !important; }
+
+    .resumen__nota[data-nota-vivo] { display: block !important; }
+}
 
 .progreso-envio {
     background: var(--exito-suave);

@@ -172,8 +172,21 @@ final class View
     public function asset(string $path): string
     {
         $base = $this->app->basePath();
+        $path = ltrim($path, '/');
+        $url  = ($base === '' ? '' : $base) . '/' . $path;
 
-        return ($base === '' ? '' : $base) . '/' . ltrim($path, '/');
+        // Las hojas de estilo y los scripts llevan una huella de su contenido:
+        // cuando el fichero cambia, cambia su dirección, y el navegador no puede
+        // seguir usando la copia antigua que tenía guardada junto a un HTML nuevo.
+        if (preg_match('/\.(?:css|js)$/', $path) === 1) {
+            $file = $this->app->rootDir() . '/public/' . $path;
+
+            if (is_file($file)) {
+                $url .= '?v=' . hash_file('crc32b', $file);
+            }
+        }
+
+        return $url;
     }
 
     public function csrf(): string

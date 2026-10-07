@@ -31,9 +31,27 @@ final class CheckoutController extends Controller
         }
 
         $session        = $this->app->session();
+        $pricing        = $this->app->pricing();
+        $methods        = $pricing->shippingMethods();
         $shippingMethod = (string) $session->get('metodo_envio', 'estandar');
         $giftWrap       = (bool) $session->get('envoltorio', false);
-        $summary        = $this->app->pricing()->summary($items, $cart->couponCode(), $shippingMethod, $giftWrap);
+        $summary        = $pricing->summary($items, $cart->couponCode(), $shippingMethod, $giftWrap);
+
+        // El resumen de cada combinación de envío y envoltorio, ya calculado. La
+        // página las trae todas y enseña la que corresponde a lo que el cliente
+        // marca, de modo que el total cambia al momento sin botón, sin esperar al
+        // servidor y sin que el navegador sume nada.
+        $variants = [];
+
+        foreach (array_keys($methods) as $method) {
+            foreach ([false, true] as $wrap) {
+                $variants[] = [
+                    'method'    => (string) $method,
+                    'gift_wrap' => $wrap,
+                    'summary'   => $pricing->summary($items, $cart->couponCode(), (string) $method, $wrap),
+                ];
+            }
+        }
 
         $this->recordCheckoutStarted($items, $summary);
 
@@ -41,48 +59,12 @@ final class CheckoutController extends Controller
             'title'            => $this->t('Datos de envío'),
             'items'            => $items,
             'summary'          => $summary,
-            'shippingMethods'  => $this->app->pricing()->shippingMethods(),
-            'giftwrapCents'    => $this->app->pricing()->giftwrapCents(),
+            'summaryVariants'  => $variants,
+            'shippingMethods'  => $methods,
+            'giftwrapCents'    => $pricing->giftwrapCents(),
             'errors'           => $session->get('_checkout_errors', []),
             'old'              => $session->pullOldInput(),
         ]);
-    }
-
-    /**
-     * Resumen económico recalculado para el método de envío y el envoltorio
-     * que se indiquen. Lo pide kitsune.js cada vez que el cliente cambia una
-     * de esas dos opciones en el paso de datos de envío, y devuelve solo el
-     * fragmento HTML del resumen (el mismo parcial que pinta la página).
-     *
-     * El cálculo sigue haciéndose en el servidor, con PricingService: el
-     * navegador no suma nada. Es una consulta: no guarda nada en la sesión;
-     * la elección se registra al enviar el formulario.
-     *
-     * @param array<string, string> $args
-     */
-    public function summary(Request $request, array $args = []): Response
-    {
-        $cart  = $this->app->cart();
-        $items = $cart->items();
-
-        if ($items === []) {
-            return Response::html('', 409);
-        }
-
-        $method = (string) $request->query('metodo_envio', '');
-
-        if (!array_key_exists($method, $this->app->pricing()->shippingMethods())) {
-            $method = (string) $this->app->session()->get('metodo_envio', 'estandar');
-        }
-
-        $summary = $this->app->pricing()->summary(
-            $items,
-            $cart->couponCode(),
-            $method,
-            $request->query('envoltorio') === '1'
-        );
-
-        return Response::html($this->app->view()->partial('partials/resumen', ['summary' => $summary]));
     }
 
     /** Paso 1 (envío del formulario). */
@@ -102,15 +84,6 @@ final class CheckoutController extends Controller
         // válidas, aunque el resto del formulario tenga errores: así el resumen
         // que se vuelve a pintar coincide con lo que el cliente ha marcado.
         $this->rememberOptions($request);
-
-        // Sin JavaScript, el botón «Actualizar total» reenvía el formulario solo
-        // para recalcular: se conserva lo ya escrito y todavía no se valida nada.
-        if ($request->input('accion') === 'recalcular') {
-            $this->app->session()->forget('_checkout_errors');
-            $this->app->session()->flashInput($request->all());
-
-            return $this->redirect('/checkout');
-        }
 
         $validator = $this->validate(
             $request->all(),
