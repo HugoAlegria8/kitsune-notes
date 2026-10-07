@@ -3,8 +3,11 @@
  * Instalador: crea el esquema y carga los datos de prueba.
  *
  * Uso:
- *   php bin/install.php           Crea la base de datos si no existe.
- *   php bin/install.php --fresh   Borra la base de datos y la recrea.
+ *   php bin/install.php                  Crea la base de datos si no existe.
+ *   php bin/install.php --fresh          Borra la base de datos y la recrea.
+ *   php bin/install.php --traducciones   Vuelve a cargar la traducción al inglés del
+ *                                        catálogo de prueba en una base ya instalada
+ *                                        (solo rellena campos vacíos; no borra nada).
  *
  * Solo se ejecuta desde la línea de comandos.
  */
@@ -20,6 +23,16 @@ if (PHP_SAPI !== 'cli') {
 $app = require dirname(__DIR__) . '/src/bootstrap.php';
 
 require dirname(__DIR__) . '/database/seed.php';
+
+// Con «--traducciones» no se instala nada: se aplica la traducción del
+// catálogo de prueba a la base de datos existente y se termina.
+if (in_array('--traducciones', $argv, true)) {
+    $filled = \KitsuneNotes\Support\CatalogTranslations::apply($app->pdo());
+
+    echo "Kitsune Notes · traducciones del catálogo\n";
+    echo "Campos en inglés rellenados: {$filled} (los que ya tenían texto no se tocan).\n";
+    exit(0);
+}
 
 $fresh   = in_array('--fresh', $argv, true);
 $driver  = (string) $app->config('database.driver');

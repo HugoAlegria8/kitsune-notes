@@ -212,6 +212,14 @@ function kitsune_seed(PDO $pdo, string $adminPassword, ?\KitsuneNotes\Core\App $
     }
 
     // -----------------------------------------------------------------
+    // Traducción al inglés del catálogo
+    // -----------------------------------------------------------------
+    // Los datos anteriores están en español, que es el idioma original. Su
+    // versión en inglés vive en database/translations_en.php y se carga en
+    // las columnas «_en» (solo rellena campos vacíos).
+    \KitsuneNotes\Support\CatalogTranslations::apply($pdo);
+
+    // -----------------------------------------------------------------
     // Condiciones comerciales simuladas
     // -----------------------------------------------------------------
     $stmt = $pdo->prepare(
@@ -296,8 +304,9 @@ function kitsune_seed(PDO $pdo, string $adminPassword, ?\KitsuneNotes\Core\App $
             (reference, customer_id, status, currency, items_total_cents, discount_cents,
              shipping_cents, giftwrap_cents, taxable_base_cents, tax_cents, total_cents, coupon_code,
              shipping_method, shipping_name, shipping_address, shipping_postal_code, shipping_city,
-             shipping_province, shipping_country, gift_wrap, customer_notes, session_id, created_at, updated_at)
-         VALUES (?, ?, ?, \'EUR\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'ES\', ?, \'\', ?, ?, ?)'
+             shipping_province, shipping_country, gift_wrap, customer_notes, session_id, created_at, updated_at,
+             total_base_cents)
+         VALUES (?, ?, ?, \'EUR\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'ES\', ?, \'\', ?, ?, ?, ?)'
     );
     $lineStmt = $pdo->prepare(
         'INSERT INTO order_lines
@@ -346,6 +355,7 @@ function kitsune_seed(PDO $pdo, string $adminPassword, ?\KitsuneNotes\Core\App $
             $shipping, $giftwrap, $base, $tax, $total, $o['coupon'],
             $o['shipping_method'], $customer[1], $customer[3], $customer[4], $customer[5],
             $customer[6], $o['gift_wrap'], 'seed-' . $o['reference'], $createdAt, $createdAt,
+            $total, // pedidos de demostración en euros: el contravalor es el propio total
         ]);
         $orderId = (int) $pdo->lastInsertId();
 

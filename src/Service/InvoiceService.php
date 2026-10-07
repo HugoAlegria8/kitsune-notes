@@ -6,6 +6,7 @@ namespace KitsuneNotes\Service;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use KitsuneNotes\Core\Translator;
 use KitsuneNotes\Repository\InvoiceRepository;
 use KitsuneNotes\Repository\OrderRepository;
 use KitsuneNotes\Repository\PaymentRepository;
@@ -29,6 +30,12 @@ use Throwable;
  *    completa en data_json (emisor, cliente, líneas, desglose de IVA y pago).
  *  - Los importes proceden del pedido, que ya guarda base imponible y cuota
  *    por desglose del total (el precio de catálogo lleva el IVA incluido).
+ *  - La factura se expide en la moneda y en el idioma del pedido. Si la
+ *    moneda no es el euro, el documento recoge además el tipo de cambio
+ *    aplicado y el contravalor en euros de la cuota de IVA y del total: el
+ *    Reglamento de facturación (art. 12 del RD 1619/2012) permite facturar
+ *    en cualquier moneda siempre que el impuesto se exprese en euros.
+ *  - La numeración es única: no hay una serie por moneda ni por idioma.
  */
 final class InvoiceService
 {
@@ -48,6 +55,8 @@ final class InvoiceService
         private readonly array $company,
         private readonly array $invoicing,
         private readonly array $commerce,
+        private readonly Translator $translator,
+        private readonly CurrencyService $currency,
     ) {
     }
 
@@ -149,6 +158,8 @@ final class InvoiceService
                 'iva_cents'            => (int) $document['tax']['tax_cents'],
                 'total_cents'          => (int) $document['total_cents'],
                 'moneda'               => (string) $document['currency'],
+                'total_eur_cents'      => (int) ($document['fx']['total_base_cents'] ?? $document['total_cents']),
+                'idioma'               => (string) $document['locale'],
             ],
             ['order_id' => $orderId, 'customer_id' => (int) $order['customer_id'], 'actor_type' => 'sistema']
         );
@@ -227,15 +238,38 @@ final class InvoiceService
             $this->orders->lines((int) $order['id'])
         );
 
+        // Idioma y moneda del documento: los del pedido. Los textos que se
+        // congelan aquí (método de envío, país, avisos) se guardan ya en ese
+        // idioma, para que la factura no dependa de quién la abra después.
+        $locale   = $this->translator->supports((string) ($order['locale'] ?? ''))
+            ? (string) $order['locale']
+            : $this->translator->defaultLocale();
+        $tr       = fn (string $text): string => $this->translator->get($text, [], $locale);
+        $currency = (string) $order['currency'];
+        $rate     = (int) ($order['fx_rate_micros'] ?? 0) ?: $this->currency->rateMicros($currency);
+
         $method = (string) $order['shipping_method'];
-        $label  = (string) ($this->commerce['shipping'][$method]['label'] ?? 'Envío');
+        $label  = isset($this->commerce['shipping'][$method]['label'])
+            ? $tr((string) $this->commerce['shipping'][$method]['label'])
+            : $tr('Envío');
+
+        // Solo en facturas que no están en euros: tipo de cambio y
+        // contravalor en euros de la cuota de IVA y del total.
+        $fx = $currency === $this->currency->base() ? [] : ['fx' => [
+            'base_currency'    => $this->currency->base(),
+            'rate_micros'      => $rate,
+            'tax_base_cents'   => $this->currency->toBase((int) $order['tax_cents'], $currency, $rate),
+            'total_base_cents' => (int) ($order['total_base_cents'] ?? 0)
+                ?: $this->currency->toBase((int) $order['total_cents'], $currency, $rate),
+        ]];
 
         return [
             'number'          => $number,
             'issued_at'       => $at->format(DATE_ATOM),
             'operation_date'  => (string) $payment['processed_at'],
             'order_reference' => (string) $order['reference'],
-            'currency'        => (string) $order['currency'],
+            'currency'        => $currency,
+            'locale'          => $locale,
             'seller'          => [
                 'name'        => (string) ($this->company['name'] ?? ''),
                 'tax_id'      => (string) ($this->company['tax_id'] ?? ''),
@@ -243,9 +277,9 @@ final class InvoiceService
                 'postal_code' => (string) ($this->company['postal_code'] ?? ''),
                 'city'        => (string) ($this->company['city'] ?? ''),
                 'province'    => (string) ($this->company['province'] ?? ''),
-                'country'     => (string) ($this->company['country'] ?? ''),
+                'country'     => $tr((string) ($this->company['country'] ?? '')),
                 'email'       => (string) ($this->company['email'] ?? ''),
-                'fictional'   => (string) ($this->company['fictional'] ?? ''),
+                'fictional'   => $tr((string) ($this->company['fictional'] ?? '')),
             ],
             'buyer'           => [
                 'name'        => (string) $order['shipping_name'],
@@ -254,7 +288,7 @@ final class InvoiceService
                 'postal_code' => (string) $order['shipping_postal_code'],
                 'city'        => (string) $order['shipping_city'],
                 'province'    => (string) $order['shipping_province'],
-                'country'     => 'España',
+                'country'     => $tr('España'),
             ],
             'lines'           => $lines,
             'items_total_cents' => (int) $order['items_total_cents'],
@@ -278,8 +312,8 @@ final class InvoiceService
                 'reference'     => (string) $payment['reference'],
                 'processed_at'  => (string) $payment['processed_at'],
             ],
-            'notice'          => 'Factura de prueba emitida por un prototipo académico: no tiene validez fiscal '
-                . 'y no se ha cobrado ningún importe.',
-        ];
+            // (En una sola línea: el texto es la clave de traducción.)
+            'notice'          => $tr('Factura de prueba emitida por un prototipo académico: no tiene validez fiscal y no se ha cobrado ningún importe.'),
+        ] + $fx;
     }
 }

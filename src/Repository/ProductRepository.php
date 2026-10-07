@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace KitsuneNotes\Repository;
 
+use KitsuneNotes\Service\CatalogLocalizer;
 use PDO;
 
 /**
@@ -13,14 +14,21 @@ use PDO;
  * procedente del usuario se concatena en el SQL. Cada marcador aparece
  * una sola vez por sentencia porque MySQL, con preparación nativa, no
  * admite reutilizar el mismo parámetro con nombre.
+ *
+ * Idioma y moneda: las consultas de la tienda devuelven cada producto ya
+ * adaptado al idioma y a la moneda del visitante (véase CatalogLocalizer).
+ * Las del back-office devuelven la fila tal cual está guardada: textos en
+ * español, traducciones en sus columnas «_en» y precio en euros.
  */
 final class ProductRepository
 {
     private const SELECT = '
         SELECT p.*,
                c.name AS category_name,  c.slug AS category_slug,
+               c.name_en AS category_name_en,
                d.name AS design_line_name, d.slug AS design_line_slug,
                d.mascot AS design_line_mascot, d.native_name AS design_line_native,
+               d.mascot_en AS design_line_mascot_en,
                d.color_primary AS design_line_color, d.color_soft AS design_line_soft
           FROM products p
           JOIN categories   c ON c.id = p.category_id
@@ -32,10 +40,49 @@ final class ProductRepository
         'sku', 'slug', 'name', 'category_id', 'design_line_id', 'brand', 'origin',
         'summary', 'description', 'specs_json', 'price_cents', 'compare_at_cents',
         'stock', 'weight_grams', 'image_path', 'is_active', 'is_featured',
+        // Traducción al inglés (opcional: vacía = se muestra el texto en español).
+        'name_en', 'origin_en', 'summary_en', 'description_en', 'specs_json_en',
     ];
 
-    public function __construct(private readonly PDO $pdo)
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly ?CatalogLocalizer $localizer = null,
+    ) {
+    }
+
+    /**
+     * @param array<string, mixed>|false $row
+     * @return array<string, mixed>|null
+     */
+    private function localized(array|false $row): ?array
     {
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->localizer !== null ? $this->localizer->product($row) : $row;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function localizedAll(array $rows): array
+    {
+        return $this->localizer !== null ? $this->localizer->products($rows) : $rows;
+    }
+
+    /**
+     * Expresión SQL del nombre por el que se ordena: el traducido cuando la
+     * tienda se está viendo en otro idioma y el producto tiene traducción.
+     */
+    private function nameExpression(): string
+    {
+        $suffix = $this->localizer !== null && $this->localizer->translating() ? $this->localizer->suffix() : '';
+
+        return preg_match('/^_[a-z]{2}$/', $suffix) === 1
+            ? "COALESCE(NULLIF(p.name{$suffix}, ''), p.name)"
+            : 'p.name';
     }
 
     // -----------------------------------------------------------------
@@ -64,25 +111,29 @@ final class ProductRepository
         }
 
         if (!empty($filters['q'])) {
-            $where[] = '(p.name LIKE :q1 OR p.summary LIKE :q2 OR p.brand LIKE :q3 OR p.sku LIKE :q4 OR d.name LIKE :q5)';
-            foreach (['q1', 'q2', 'q3', 'q4', 'q5'] as $key) {
+            // Se busca en los textos de los dos idiomas: quien compra en inglés
+            // encuentra «notebook» y también «cuaderno».
+            $where[] = '(p.name LIKE :q1 OR p.summary LIKE :q2 OR p.brand LIKE :q3 OR p.sku LIKE :q4 OR d.name LIKE :q5'
+                . ' OR p.name_en LIKE :q6 OR p.summary_en LIKE :q7)';
+            foreach (['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7'] as $key) {
                 $params[$key] = '%' . $filters['q'] . '%';
             }
         }
 
+        $name  = $this->nameExpression();
         $order = match ($filters['orden'] ?? '') {
             'precio_asc'  => 'p.price_cents ASC',
             'precio_desc' => 'p.price_cents DESC',
-            'nombre'      => 'p.name ASC',
+            'nombre'      => $name . ' ASC',
             'novedades'   => 'p.created_at DESC',
-            default       => 'p.is_featured DESC, p.name ASC',
+            default       => 'p.is_featured DESC, ' . $name . ' ASC',
         };
 
         $sql  = self::SELECT . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY ' . $order;
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        return $this->localizedAll($stmt->fetchAll());
     }
 
     /** @return array<string, mixed>|null */
@@ -91,7 +142,7 @@ final class ProductRepository
         $stmt = $this->pdo->prepare(self::SELECT . ' WHERE p.slug = :slug AND p.is_active = 1');
         $stmt->execute(['slug' => $slug]);
 
-        return $stmt->fetch() ?: null;
+        return $this->localized($stmt->fetch());
     }
 
     /** @return array<string, mixed>|null */
@@ -100,7 +151,7 @@ final class ProductRepository
         $stmt = $this->pdo->prepare(self::SELECT . ' WHERE p.id = :id');
         $stmt->execute(['id' => $id]);
 
-        return $stmt->fetch() ?: null;
+        return $this->localized($stmt->fetch());
     }
 
     /**
@@ -120,7 +171,7 @@ final class ProductRepository
         $stmt->execute($ids);
 
         $result = [];
-        foreach ($stmt->fetchAll() as $row) {
+        foreach ($this->localizedAll($stmt->fetchAll()) as $row) {
             $result[(int) $row['id']] = $row;
         }
 
@@ -131,12 +182,12 @@ final class ProductRepository
     public function featured(int $limit = 4): array
     {
         $stmt = $this->pdo->prepare(
-            self::SELECT . ' WHERE p.is_active = 1 AND p.is_featured = 1 ORDER BY p.name LIMIT :limit'
+            self::SELECT . ' WHERE p.is_active = 1 AND p.is_featured = 1 ORDER BY ' . $this->nameExpression() . ' LIMIT :limit'
         );
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll();
+        return $this->localizedAll($stmt->fetchAll());
     }
 
     /** @return list<array<string, mixed>> */
@@ -145,7 +196,7 @@ final class ProductRepository
         $stmt = $this->pdo->prepare(
             self::SELECT . ' WHERE p.is_active = 1 AND p.id <> :id
                              AND (p.design_line_id = :line1 OR p.category_id = :category)
-                           ORDER BY (p.design_line_id = :line2) DESC, p.name
+                           ORDER BY (p.design_line_id = :line2) DESC, ' . $this->nameExpression() . '
                            LIMIT :limit'
         );
         $stmt->bindValue('id', (int) $product['id'], PDO::PARAM_INT);
@@ -155,7 +206,7 @@ final class ProductRepository
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll();
+        return $this->localizedAll($stmt->fetchAll());
     }
 
     /** Descuenta existencias al confirmar un pedido. */
@@ -165,6 +216,13 @@ final class ProductRepository
             'UPDATE products SET stock = CASE WHEN stock > :qty1 THEN stock - :qty2 ELSE 0 END WHERE id = :id'
         );
         $stmt->execute(['qty1' => $quantity, 'qty2' => $quantity, 'id' => $productId]);
+    }
+
+    /** Devuelve unidades al stock (pedido sin pagar que se cancela). */
+    public function increaseStock(int $productId, int $quantity): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE products SET stock = stock + :qty WHERE id = :id');
+        $stmt->execute(['qty' => max(0, $quantity), 'id' => $productId]);
     }
 
     public function countActive(): int

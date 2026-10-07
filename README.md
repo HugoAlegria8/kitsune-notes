@@ -33,6 +33,7 @@ Desarrollado para la **Tarea 1** de la asignatura *Soluciones Informáticas para
 | Factura | `/pedido/{referencia}/factura`: factura numerada `F-AAAA-NNNNNN` con desglose de IVA, imprimible o guardable como PDF |
 | Correo de confirmación | Se «envía» al cliente al pagar; por defecto queda en un **buzón de pruebas** (`/admin/correos`) y, si se activa, **se entrega de verdad por SMTP** a las direcciones autorizadas (sección 7) |
 | Aviso de cookies | Banner informativo en la portada (solo hay cookies técnicas), con detalle en `/aviso-academico#cookies` |
+| Idiomas y monedas | Botones **ES / EN** en la franja superior. En español todo sigue igual y en euros (`12,90 €`); en inglés la tienda se ve traducida y vende en libras (`£10.97`), con el pedido, la factura y los correos en ese idioma y esa moneda (sección 17) |
 | Back-office | `/admin`: pedidos y cambio de estado, **gestión de productos**, **buzón de correos de prueba**, eventos e incidencias |
 | Persistencia | SQLite por defecto, MySQL/MariaDB opcional (ambos vía PDO) |
 | Instrumentación de eventos | 6 eventos exigidos + 11 adicionales, en base de datos, fichero JSONL y API |
@@ -203,8 +204,12 @@ Cualquier otro número que supere la validación de Luhn se autoriza.
 3. **Añadir al carrito** → se emite `cart.item_added`.
 4. **Carrito** → aplicar `KITSUNE10` y comprobar el recálculo de descuento, envío e IVA.
 5. **Checkout** → datos de envío, método de envío y envoltorio → se emite `checkout.started`.
+   Al cambiar el método de envío o marcar el envoltorio, el resumen se recalcula al momento
+   (lo calcula el servidor; sin JavaScript hay un botón «Actualizar total»).
 6. **Pago** → primero con `4000 0000 0000 0002` (rechazo) y después con `4242…` (autorización).
-   El pedido se crea una sola vez: el segundo intento reutiliza el mismo pedido.
+   El pedido se crea una sola vez: el segundo intento reutiliza el mismo pedido (salvo que
+   entre medias se cambie el carrito o el idioma, y con él la moneda: entonces el pedido sin
+   pagar se cancela, se devuelve su stock y se genera uno nuevo con el importe que se ve).
    Se emiten `order.created` y `payment.simulated` (dos veces, con resultados distintos).
    El rechazo **no** genera factura ni consume número.
 7. **Confirmación** → referencia `KN-2026-NNNNNN`, cronología de estados y el número de la
@@ -224,6 +229,12 @@ Cualquier otro número que supere la validación de Luhn se autoriza.
     `product.updated` guarda el antes y el después), retirarlo del catálogo y comprobar que
     un producto con ventas no se puede borrar.
 13. **Back-office · eventos** → la traza completa y la exportación JSON/CSV.
+14. **Idioma y moneda** → volver a la tienda y pulsar **EN** en la franja superior: los textos
+    pasan a inglés y los precios a libras con el símbolo delante (`£10.97`). Hacer una compra:
+    el pedido se guarda en libras con su tipo de cambio, y la factura y el correo salen en
+    inglés. Pulsar **ES** en la página del pedido: el marco vuelve al español, pero el pedido
+    y su factura siguen en libras y la factura sigue en inglés. En el back-office ese pedido
+    aparece en libras, con su contravalor en euros.
 
 ---
 
@@ -250,6 +261,9 @@ Reglas de negocio aplicadas:
 * **Validación completa**: precio en euros (`12,90`), precio tachado mayor que el precio
   actual, stock y peso en rangos, SKU y dirección web únicos, ficha técnica en formato
   `Clave: valor`, categoría y colección existentes.
+* **Versión en inglés opcional**: nombre, resumen, descripción y ficha técnica tienen su campo
+  en inglés. Lo que se deja vacío se muestra en español en la tienda en inglés, y el listado
+  marca el producto como «sin traducir». El precio se escribe siempre en euros (sección 17).
 * **Imagen**: se elige entre las ilustraciones del proyecto o se sube un PNG, JPEG o WebP de
   hasta 2 MB. El tipo se comprueba por el **contenido** del fichero (no por la extensión), se
   guarda con un nombre aleatorio en `public/uploads/productos/` y esa carpeta tiene un
@@ -491,23 +505,25 @@ kitsune-notes/
 │   ├── assets/             # CSS, JS e ilustraciones SVG propias
 │   └── uploads/productos/  # Imágenes subidas desde el back-office (no versionadas)
 ├── src/
-│   ├── Core/               # Infraestructura: router, PDO, vistas, validación, sesión, actualización ligera del esquema
+│   ├── Core/               # Infraestructura: router, PDO, vistas, validación, sesión, traductor, actualización ligera del esquema
 │   ├── Controller/         # Coordinación petición → servicios → vista
-│   ├── Service/            # Lógica de negocio (carrito, precios, pedidos, pagos, catálogo, eventos, facturas, correos)
+│   ├── Service/            # Lógica de negocio (carrito, precios, monedas, pedidos, pagos, catálogo, eventos, facturas, correos)
 │   ├── Repository/         # Acceso a datos (una clase por agregado)
-│   ├── Support/            # Utilidades (importes, UUID, mensajes MIME, cliente SMTP)
+│   ├── Support/            # Utilidades (importes y formato de moneda, UUID, mensajes MIME, cliente SMTP)
 │   ├── bootstrap.php       # Autocargador PSR-4 propio y configuración
 │   └── routes.php          # Tabla de rutas
 ├── views/                  # Plantillas PHP (layouts, tienda, back-office, facturas y correos)
+├── lang/en/                # Traducción al inglés de la interfaz: «texto en español» => «texto en inglés»
 ├── database/
 │   ├── schema.sql          # Esquema SQLite
 │   ├── schema.mysql.sql    # Esquema equivalente MySQL/MariaDB
-│   └── seed.php            # Datos de prueba
+│   ├── seed.php            # Datos de prueba
+│   └── translations_en.php # Traducción al inglés del catálogo de prueba
 ├── storage/                # Base de datos, eventos y logs (no versionado)
 ├── bin/install.php         # Instalador
 ├── bin/probar-correo.php   # Comprueba el envío real de correos (sección 7)
 ├── iniciar-windows.bat     # Arranque con doble clic en Windows
-├── tools/                  # Utilidades de desarrollo (ilustraciones, vista previa estática)
+├── tools/                  # Utilidades de desarrollo (ilustraciones, vista previa estática, comprobación de traducciones)
 └── docs/capturas/          # Evidencias del recorrido completo
 ```
 
@@ -550,6 +566,16 @@ Decisiones relevantes:
   automáticamente al arrancar (`SchemaUpgrade`, idempotente).
 * Cada colección guarda su personaje (`mascot`), su nombre original en japonés o coreano
   (`native_name`) y sus dos colores.
+* **Idiomas**: el texto original de los datos maestros está en español. Las columnas terminadas
+  en `_en` (`name_en`, `summary_en`, `description_en`, `specs_json_en`…) guardan su traducción
+  y son opcionales: vacías, se muestra el español.
+* **Monedas**: los precios del catálogo están siempre en euros. Cada pedido guarda la moneda
+  en la que se hizo (`currency`), el idioma (`locale`), el tipo de cambio aplicado
+  (`fx_rate_micros`, en millonésimas: 850000 = 0,85) y el contravalor de su total en euros
+  (`total_base_cents`). Todos los importes del pedido, de sus líneas, de su pago y de su
+  factura están en la moneda del pedido; el contravalor permite sumar pedidos de monedas
+  distintas. Las bases de datos anteriores reciben estas columnas al arrancar (`SchemaUpgrade`),
+  con el contravalor de los pedidos antiguos igual a su total y el catálogo de prueba traducido.
 
 ---
 
@@ -585,7 +611,7 @@ Cada evento tiene un sobre común y una carga útil propia:
 {
   "event_id": "7f317141-82e8-4fcd-b7f0-bf4e822f5d17",
   "event_name": "product.updated",
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "source": "kitsune-notes.web",
   "occurred_at": "2026-09-22T12:38:06+02:00",
   "session_id": "db67d98fd186a0c7b17d59106e2e587e",
@@ -605,6 +631,24 @@ Cada evento tiene un sobre común y una carga útil propia:
 ```
 
 La IP se guarda **seudonimizada** (SHA-256 con sal), nunca en claro.
+
+**Versión 1.1 del esquema (idiomas y monedas).** Es compatible con la 1.0: no se quita ni se
+renombra ningún campo, solo se añaden. Los eventos con importes llevan siempre `moneda`
+(`EUR` o `GBP`) y los importes van en esa moneda; para poder sumar o comparar sin convertir,
+llevan además su contravalor en euros:
+
+| Evento | Campos añadidos |
+|---|---|
+| `product.viewed` | `moneda`, `precio_eur_cents`, `idioma` |
+| `cart.item_added` | `moneda`, `precio_unitario_eur_cents`, `idioma` |
+| `checkout.started` | `moneda`, `total_estimado_eur_cents`, `idioma` |
+| `order.created` | `moneda` (antes siempre `EUR`), `idioma`, `tipo_cambio`, `total_eur_cents` y `precio_eur_cents` en cada línea |
+| `payment.simulated` | `moneda` (antes siempre `EUR`), `importe_eur_cents` |
+| `invoice.issued` | `total_eur_cents`, `idioma` |
+| `email.sent`, `support.requested`, `incident.created` | `idioma` |
+
+Quien analice los eventos (Tarea 2) puede trabajar solo con los campos `*_eur_cents` y usar
+`moneda` e `idioma` como dimensiones.
 
 ### Dónde se almacenan y cómo consumirlos
 
@@ -704,10 +748,11 @@ location ~ \.php$ {
   sesión al iniciar sesión.
 * Cookies de sesión `HttpOnly` y `SameSite=Lax`; cabeceras `X-Content-Type-Options`,
   `X-Frame-Options` y `Referrer-Policy`.
-* **Solo dos cookies, ambas propias y técnicas**: `kitsune_session` (carrito, mensajes y token CSRF;
-  hasta que se cierra el navegador) y `kitsune_aviso_cookies` (recuerda que se cerró el aviso;
-  180 días, `privacy.cookie_notice_days` en `config/config.php`). Están listadas con su
-  duración en `/aviso-academico#cookies`. Como no hay cookies de analítica, publicidad ni
+* **Solo tres cookies, todas propias y técnicas**: `kitsune_session` (carrito, mensajes y token CSRF;
+  hasta que se cierra el navegador), `kitsune_aviso_cookies` (recuerda que se cerró el aviso;
+  180 días, `privacy.cookie_notice_days` en `config/config.php`) y `kitsune_idioma` (recuerda el
+  idioma elegido con los botones ES/EN; solo se crea si el visitante cambia de idioma, dura 180
+  días y es `HttpOnly`). Están listadas con su duración en `/aviso-academico#cookies`. Como no hay cookies de analítica, publicidad ni
   terceros que aceptar o rechazar, el banner de la portada es **informativo** («Entendido») y
   no un panel de consentimiento. Funciona también sin JavaScript: el botón envía un formulario
   (`POST /cookies/entendido`, con token CSRF) y es el servidor quien guarda la cookie; con
@@ -730,6 +775,8 @@ location ~ \.php$ {
   (sección 7).
 * Los precios **nunca** llegan desde el navegador: la sesión guarda únicamente identificadores
   de producto y cantidades, y los importes se recalculan en el servidor en cada petición.
+  También el resumen del checkout: al cambiar el envío o el envoltorio, el navegador pide a
+  `/checkout/resumen` el fragmento ya calculado y no suma nada por su cuenta.
 * **Contraste AA** comprobado para todos los pares de color de texto de la paleta «fresa y
   nata» (el rosa de los botones se oscureció hasta `#D6336C` para que el texto blanco llegue a
   4,6:1), foco visible, enlace para saltar al contenido, etiquetas en todos los campos y
@@ -745,8 +792,9 @@ location ~ \.php$ {
    de contraseña ni histórico de pedidos por usuario (la consulta se hace con referencia +
    correo).
 3. **El carrito vive en la sesión**, no en base de datos: no se recupera desde otro dispositivo.
-4. **El stock se descuenta al crear el pedido** y no se repone al cancelar. Tampoco hay reservas
-   temporales ni control de concurrencia fino.
+4. **El stock se descuenta al crear el pedido** y no se repone al cancelarlo desde el
+   back-office (sí cuando la propia tienda sustituye un pedido sin pagar porque el cliente ha
+   cambiado el carrito o la moneda). Tampoco hay reservas temporales ni control de concurrencia fino.
 5. **Un solo rol en el back-office.** Cualquier usuario interno puede editar el catálogo; no
    hay permisos por rol, flujo de aprobación ni versiones anteriores de un producto (solo el
    rastro de cambios de los eventos `product.updated`).
@@ -764,7 +812,13 @@ location ~ \.php$ {
    claves rotativas por consumidor, con limitación de tasa.
 10. **Sin pruebas automatizadas.** La verificación ha sido manual y mediante un recorrido
     automatizado del flujo de compra y del back-office.
-11. **Una sola moneda, un solo país de envío** (EUR, España peninsular) y un único tipo de IVA.
+11. **Dos idiomas y dos monedas, pero un solo país.** La tienda vende en euros y en libras,
+    pero el envío sigue siendo solo a España peninsular (código postal de 5 dígitos, provincia)
+    y se aplica siempre el IVA español del 21 %, también a los pedidos en libras. El tipo de
+    cambio es **fijo y de demostración** (`KN_FX_EUR_GBP`): no se consulta ninguna fuente
+    oficial ni se actualiza solo. Las direcciones web no se traducen (`/carrito`, `/pedido/…`),
+    el back-office y el API están solo en español, y añadir un tercer idioma exige un catálogo
+    nuevo en `lang/` y columnas de traducción nuevas en la base de datos (sección 17).
 12. **SQLite no está pensado para alta concurrencia.** Para tráfico real habría que pasar a
     MySQL/MariaDB o PostgreSQL, previsto en la capa PDO pero no probado en carga.
 13. **Las facturas son de prueba.** Emisor y NIF ficticios, sin validez fiscal ni requisitos
@@ -806,6 +860,12 @@ Para comprobar el envío real de correos sin hacer una compra (sección 7):
 php bin/probar-correo.php tu.direccion@ejemplo.com
 ```
 
+Para comprobar que no falta ninguna traducción después de tocar un texto (sección 17):
+
+```bash
+php tools/comprobar_traducciones.php
+```
+
 ---
 
 ## 15. Equipo y reparto de responsabilidades
@@ -826,3 +886,126 @@ php bin/probar-correo.php tu.direccion@ejemplo.com
 El uso de herramientas de IA generativa en este proyecto está declarado en el **anexo
 correspondiente de la memoria**, con el detalle de tareas asistidas, errores detectados,
 cambios realizados por el grupo y forma de validación, según exige el enunciado de la tarea.
+
+---
+
+## 17. Idiomas y monedas (español / inglés, euros / libras)
+
+### Qué ve el visitante
+
+En la franja superior de la tienda hay dos botones pequeños, **ES** y **EN**. Al pulsar uno, la
+página en la que se está se recarga en ese idioma y la elección se recuerda 180 días en una
+cookie técnica (`kitsune_idioma`).
+
+| | Español (por defecto) | English |
+|---|---|---|
+| Textos | Los originales, sin cambios | Traducidos: interfaz, catálogo, mensajes y errores de formulario |
+| Moneda de compra | Euro | Libra esterlina |
+| Formato del importe | `1.234,56 €` (símbolo detrás) | `£1,234.56` (símbolo delante) |
+| Fechas | `06/10/2026 18:12` | `6 Oct 2026, 18:12` |
+| Correos y factura | En español y en euros | En inglés y en libras |
+
+Dos reglas que conviene tener claras para la defensa:
+
+* **El símbolo depende de la moneda y los separadores del idioma.** El euro va siempre detrás
+  del importe y la libra siempre delante, se mire en el idioma que se mire.
+* **Un pedido se muestra siempre en SU moneda y su factura en SU idioma.** Un pedido hecho en
+  inglés sigue en libras aunque después se consulte en español (`£31,33`), y su factura sigue
+  en inglés. Por eso las plantillas de pedidos y facturas llaman a
+  `$this->money($importe, $pedido['currency'])` y no a `$this->money($importe)`.
+
+El **back-office y el API están solo en español**: son herramientas del equipo. En el panel,
+cada pedido aparece en su moneda y el importe acumulado suma el contravalor en euros.
+
+### Cómo se traduce la interfaz
+
+El español es el idioma original y **el propio texto en español es la clave de traducción**
+(como en *gettext*). Las plantillas y los controladores siguen escribiendo el texto en español,
+envuelto en un ayudante; el inglés se busca en `lang/en/*.php`, que son listas
+`'texto en español' => 'texto en inglés'`. En español el ayudante devuelve el texto tal cual,
+así que la versión original no puede romperse por una traducción que falte.
+
+```php
+<?= $this->t('Añadir al carrito') ?>                                  // texto o atributo: traducido y escapado
+<?= $this->t('Pedido {referencia}', ['referencia' => $ref]) ?>        // con valores variables
+<?= $this->th('Es un <strong>prototipo académico</strong>.') ?>       // frase con HTML propio
+<?= $this->tn('{n} artículo', '{n} artículos', $unidades) ?>          // singular y plural
+<?= $this->money($centimos) ?>                                        // en la moneda de la tienda
+<?= $this->money($centimos, $order['currency']) ?>                    // en la moneda de un pedido
+```
+
+En los controladores, `$this->t('…')` (títulos y mensajes) y `$this->validate(…)` (formularios
+con los errores en el idioma activo). Para **cambiar o añadir un texto**:
+
+1. Escríbelo en español en la plantilla, dentro de `t()`: una frase entera por clave, nunca
+   trozos concatenados, y los datos variables como `{marcadores}`.
+2. Añade su traducción al fichero de `lang/en/` que corresponda (`comun.php`, `tienda.php`,
+   `compra.php` o `documentos.php`).
+3. Ejecuta `php tools/comprobar_traducciones.php`: avisa de los textos sin traducir, de los
+   marcadores que no coinciden y de las traducciones contradictorias. Con `KN_APP_DEBUG=1`,
+   además, cualquier texto mostrado sin traducir queda anotado en `storage/logs/php-error.log`.
+
+### Cómo se traduce el catálogo
+
+Los nombres y descripciones de productos, categorías y colecciones están en la base de datos:
+el original en español y la traducción en columnas `_en`. `CatalogLocalizer` sustituye unos por
+otros al leer, de modo que el resto de la aplicación no sabe en qué idioma se está comprando.
+
+* El catálogo de prueba se traduce con `database/translations_en.php`, que el instalador carga
+  solo. `php bin/install.php --traducciones` lo vuelve a aplicar sobre una base ya instalada
+  (solo rellena campos vacíos: nunca pisa una traducción corregida a mano).
+* Los productos nuevos se traducen desde su ficha del back-office («Versión en inglés»). Si se
+  deja vacía, en inglés se ven en español y el listado los marca como «sin traducir».
+* El buscador busca en los dos idiomas.
+
+### Monedas y tipo de cambio
+
+* Los precios del catálogo, los gastos de envío, el envoltorio y los cupones se definen **solo
+  en euros**. En inglés se convierten a libras con un tipo de cambio **fijo de demostración**
+  que se cambia en el `.env`: `KN_FX_EUR_GBP=0.85` (libras por euro). No es un tipo oficial.
+* Se convierte el **precio unitario** (redondeado al penique) y a partir de ahí **todo se
+  calcula ya en libras**: líneas, descuento, envío, envoltorio, IVA y total. Así el desglose
+  suma exactamente el total, sin diferencias de céntimos por redondeos.
+* El pedido guarda su moneda, su idioma, el tipo de cambio aplicado y el contravalor de su
+  total en euros. Cambiar después `KN_FX_EUR_GBP` no altera los pedidos ya hechos.
+* La **factura** se expide en la moneda y el idioma del pedido. Si no está en euros, indica el
+  tipo de cambio y el contravalor en euros de la cuota de IVA y del total: el Reglamento de
+  facturación (art. 12 del RD 1619/2012) permite facturar en cualquier moneda y lengua siempre
+  que la cuota del impuesto figure en euros. En un sistema real el tipo no sería fijo, sino el
+  que marca la Ley del IVA (art. 79.Once).
+* La numeración de pedidos y facturas es única: no hay series por idioma ni por moneda.
+* Si el cliente cambia de idioma **a mitad de compra**, los precios del carrito pasan a la otra
+  moneda. Si ya había un pedido sin pagar (un pago rechazado), ese pedido se cancela y se
+  genera otro con el importe que se ve en pantalla: nunca se cobra un importe distinto.
+
+### Correos
+
+Cada correo se escribe en el idioma del pedido (o de la solicitud de soporte), no en el de quien
+provoca el envío: si el personal marca como enviado, desde el back-office en español, un pedido
+hecho en inglés, el aviso sale en inglés y en libras. Sus enlaces llevan `?idioma=en` para que
+la tienda se abra en inglés.
+
+### Dónde está cada cosa
+
+| Fichero | Qué hace |
+|---|---|
+| `config/config.php` (`i18n`, `commerce.currencies`) | Idiomas disponibles, moneda de cada uno, cookie y tipo de cambio |
+| `src/Core/Translator.php` | Traductor: idioma activo, catálogos de `lang/`, marcadores y plurales |
+| `src/Core/App.php` (`bootLocale`) | Decide el idioma de cada petición y atiende los botones ES/EN |
+| `src/Core/View.php` | Ayudantes de plantilla: `t`, `th`, `tn`, `money`, `date`, `inLocale` |
+| `src/Support/Money.php` | Formato de cada moneda y conversión con enteros (sin coma flotante) |
+| `src/Service/CurrencyService.php` | Moneda activa, tipo de cambio y contravalor en euros |
+| `src/Service/CatalogLocalizer.php` | Pone cada producto en el idioma y la moneda del visitante |
+| `src/Service/PricingService.php` | Calcula el carrito entero en la moneda de la compra |
+| `src/Core/SchemaUpgrade.php` | Añade las columnas nuevas a una base de datos anterior |
+| `lang/en/*.php`, `database/translations_en.php` | Las traducciones |
+| `tools/comprobar_traducciones.php` | Comprueba que no falta ninguna |
+
+### Añadir otro idioma
+
+1. Declararlo en `config/config.php` (`i18n.locales`) con su etiqueta, su código HTML y su moneda;
+   si la moneda es nueva, añadirla a `commerce.currencies` y a `Money::CURRENCIES`.
+2. Crear `lang/<código>/` con los mismos ficheros que `lang/en/`.
+3. Añadir las columnas `_<código>` a `schema.sql`, `schema.mysql.sql` y `SchemaUpgrade`, y su
+   fichero `database/translations_<código>.php`.
+4. Ajustar los formatos de fecha y de número del idioma en `View::date()` y `Money::SEPARATORS`.

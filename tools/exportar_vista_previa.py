@@ -20,7 +20,7 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080"
-DESTINO = Path(sys.argv[2] if len(sys.argv) > 2 else "/tmp/claude-0/sitio")
+DESTINO = Path(sys.argv[2] if len(sys.argv) > 2 else "vista-previa")
 RAIZ = Path(__file__).resolve().parent.parent
 
 CATEGORIAS = ["cuadernos", "escritura", "washi-y-pegatinas", "organizacion"]
@@ -113,10 +113,20 @@ def destino_estatico(href: str) -> str | None:
     """Traduce una URL de la aplicación a su fichero estático (conserva el #fragmento)."""
     destino = _destino_sin_fragmento(href)
 
-    if destino not in (None, "__aviso__") and "#" in href:
+    if destino not in (None, *INERTES) and "#" in href:
         destino += "#" + href.split("#", 1)[1]
 
     return destino
+
+
+# Destinos que no existen en la copia estática, con el aviso que se muestra al pulsarlos.
+INERTES = {
+    "__aviso__": "El API de eventos (JSON/CSV) responde solo con el servidor PHP en marcha.",
+    "__aviso_idioma__": (
+        "El cambio de idioma (ES/EN) y de moneda necesita el servidor PHP del prototipo: "
+        "la vista previa estática solo incluye la versión en español."
+    ),
+}
 
 
 def _destino_sin_fragmento(href: str) -> str | None:
@@ -124,6 +134,10 @@ def _destino_sin_fragmento(href: str) -> str | None:
         return None
 
     limpio = href.split("#")[0]
+
+    # Botones ES/EN de la cabecera: enlazan a la misma página con «?idioma=xx».
+    if re.search(r"[?&]idioma=", limpio):
+        return "__aviso_idioma__"
 
     if limpio in MAPA:
         return MAPA[limpio]
@@ -221,11 +235,9 @@ def reescribir(html: str, titulo_pagina: str) -> str:
                 a["rel"] = "noopener"
             continue
 
-        if destino == "__aviso__":
+        if destino in INERTES:
             a["href"] = "#"
-            a["data-vp-inerte"] = (
-                "El API de eventos (JSON/CSV) responde solo con el servidor PHP en marcha."
-            )
+            a["data-vp-inerte"] = INERTES[destino]
             a["class"] = (a.get("class") or []) + ["vp-inerte"]
         else:
             a["href"] = destino
@@ -238,7 +250,7 @@ def reescribir(html: str, titulo_pagina: str) -> str:
             if interna == a["href"]:
                 continue
             destino = destino_estatico(interna)
-            a["href"] = "#" if destino in (None, "__aviso__") else destino
+            a["href"] = "#" if destino is None or destino in INERTES else destino
         marco["srcdoc"] = str(correo)
         # La copia estática no contiene scripts ni datos introducidos por nadie,
         # y el correo no ejecuta JavaScript. Con ``allow-same-origin`` el enlace

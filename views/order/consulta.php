@@ -8,10 +8,9 @@
  */
 ?>
 <div style="max-width:520px; margin-inline:auto">
-    <h1>Consulta tu pedido</h1>
+    <h1><?= $this->t('Consulta tu pedido') ?></h1>
     <p style="color:var(--frambuesa-suave)">
-        Introduce la referencia del pedido y el correo electrónico con el que lo hiciste.
-        Pedimos ambos datos para que nadie pueda ver los datos de envío conociendo solo la referencia.
+        <?= $this->t('Introduce la referencia del pedido y el correo electrónico con el que lo hiciste. Pedimos ambos datos para que nadie pueda ver los datos de envío conociendo solo la referencia.') ?>
     </p>
 
     <?php if ($errors !== []): ?>
@@ -29,21 +28,20 @@
         <?= $this->csrf() ?>
 
         <div class="campo">
-            <label for="referencia">Referencia del pedido</label>
+            <label for="referencia"><?= $this->t('Referencia del pedido') ?></label>
             <input type="text" id="referencia" name="referencia" required
                    placeholder="KN-2026-000001" value="<?= $this->e($reference) ?>">
         </div>
 
         <div class="campo">
-            <label for="email">Correo electrónico de la compra</label>
-            <input type="email" id="email" name="email" required placeholder="tu@correo.test">
+            <label for="email"><?= $this->t('Correo electrónico de la compra') ?></label>
+            <input type="email" id="email" name="email" required placeholder="<?= $this->t('tu@correo.test') ?>">
         </div>
 
-        <button class="btn btn--primario btn--bloque" type="submit">Ver el pedido</button>
+        <button class="btn btn--primario btn--bloque" type="submit"><?= $this->t('Ver el pedido') ?></button>
     </form>
 
     <p style="margin-top:1rem; font-size:.86rem; color:var(--frambuesa-tenue)">
-        ¿Necesitas ayuda con un pedido? Escríbenos desde el
-        <a href="<?= $this->url('/soporte') ?>">formulario de soporte</a>.
+        <?= $this->th('¿Necesitas ayuda con un pedido? Escríbenos desde el <a href="{url}">formulario de soporte</a>.', ['url' => $this->url('/soporte')]) ?>
     </p>
 </div>

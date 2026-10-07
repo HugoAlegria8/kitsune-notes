@@ -82,6 +82,10 @@
                             <span style="font-size:.8rem; color:var(--frambuesa-tenue)">
                                 <?= $this->e($product['sku']) ?> · <?= $this->e($product['category_name']) ?>
                             </span>
+                            <?php /* Sin nombre en inglés, la tienda en inglés lo muestra en español. */ ?>
+                            <?php if (trim((string) ($product['name_en'] ?? '')) === ''): ?>
+                                <br><span class="insignia insignia--warning" title="En la tienda en inglés se muestra en español">sin traducir</span>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?= $this->partial('partials/coleccion-chip', [

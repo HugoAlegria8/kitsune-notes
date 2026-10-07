@@ -32,8 +32,17 @@
     </div>
     <div class="metrica">
         <p class="metrica__etiqueta">Importe acumulado</p>
-        <p class="metrica__valor"><?= $this->money($revenueCents) ?></p>
-        <p class="metrica__nota">Simulado, sin cancelados</p>
+        <p class="metrica__valor"><?= $this->money($revenueCents, $baseCurrency) ?></p>
+        <?php /* Los pedidos pueden estar en monedas distintas: el acumulado suma su contravalor en euros. */ ?>
+        <p class="metrica__nota">
+            Simulado, sin cancelados<?php if (count($revenueByCurrency) > 1): ?>.
+                Contravalor en euros de:
+                <?php foreach ($revenueByCurrency as $i => $row): ?>
+                    <?= $i > 0 ? ' + ' : '' ?><?= $this->money($row['total_cents'], $row['currency']) ?>
+                    (<?= $row['orders'] ?> <?= $row['orders'] === 1 ? 'pedido' : 'pedidos' ?>)
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </p>
     </div>
     <div class="metrica">
         <p class="metrica__etiqueta">Eventos registrados</p>
@@ -97,7 +106,7 @@
                             <span style="font-size:.8rem; color:var(--frambuesa-tenue)"><?= $this->e($order['customer_email']) ?></span>
                         </td>
                         <td><span class="insignia insignia--<?= $this->e($badge['tone']) ?>"><?= $this->e($badge['label']) ?></span></td>
-                        <td class="num"><?= $this->money((int) $order['total_cents']) ?></td>
+                        <td class="num"><?= $this->money((int) $order['total_cents'], (string) $order['currency']) ?></td>
                         <td><?= $this->date($order['created_at']) ?></td>
                     </tr>
                 <?php endforeach; ?>

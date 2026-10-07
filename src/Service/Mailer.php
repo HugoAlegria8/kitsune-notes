@@ -186,6 +186,7 @@ final class Mailer
                 'numero_factura'    => $message['invoice_number'] ?? null,
                 'canal'             => $status === self::DELIVERY_LOCAL ? 'buzon_pruebas' : 'smtp',
                 'entrega'           => $status,
+                'idioma'            => (string) ($message['locale'] ?? 'es'),
             ],
             [
                 'order_id'    => $row['order_id'],

@@ -6,9 +6,9 @@ namespace KitsuneNotes\Controller;
 
 use KitsuneNotes\Core\Request;
 use KitsuneNotes\Core\Response;
-use KitsuneNotes\Core\Validator;
 use KitsuneNotes\Service\EventRecorder;
 use KitsuneNotes\Service\PaymentSimulator;
+use KitsuneNotes\Support\Money;
 use RuntimeException;
 use Throwable;
 
@@ -25,7 +25,7 @@ final class CheckoutController extends Controller
         $items = $cart->items();
 
         if ($items === []) {
-            $this->flash('aviso', 'Tu carrito está vacío: añade algún producto antes de continuar.');
+            $this->flash('aviso', $this->t('Tu carrito está vacío: añade algún producto antes de continuar.'));
 
             return $this->redirect('/carrito');
         }
@@ -38,7 +38,7 @@ final class CheckoutController extends Controller
         $this->recordCheckoutStarted($items, $summary);
 
         return $this->view('checkout/datos', [
-            'title'            => 'Datos de envío',
+            'title'            => $this->t('Datos de envío'),
             'items'            => $items,
             'summary'          => $summary,
             'shippingMethods'  => $this->app->pricing()->shippingMethods(),
@@ -48,11 +48,48 @@ final class CheckoutController extends Controller
         ]);
     }
 
+    /**
+     * Resumen económico recalculado para el método de envío y el envoltorio
+     * que se indiquen. Lo pide kitsune.js cada vez que el cliente cambia una
+     * de esas dos opciones en el paso de datos de envío, y devuelve solo el
+     * fragmento HTML del resumen (el mismo parcial que pinta la página).
+     *
+     * El cálculo sigue haciéndose en el servidor, con PricingService: el
+     * navegador no suma nada. Es una consulta: no guarda nada en la sesión;
+     * la elección se registra al enviar el formulario.
+     *
+     * @param array<string, string> $args
+     */
+    public function summary(Request $request, array $args = []): Response
+    {
+        $cart  = $this->app->cart();
+        $items = $cart->items();
+
+        if ($items === []) {
+            return Response::html('', 409);
+        }
+
+        $method = (string) $request->query('metodo_envio', '');
+
+        if (!array_key_exists($method, $this->app->pricing()->shippingMethods())) {
+            $method = (string) $this->app->session()->get('metodo_envio', 'estandar');
+        }
+
+        $summary = $this->app->pricing()->summary(
+            $items,
+            $cart->couponCode(),
+            $method,
+            $request->query('envoltorio') === '1'
+        );
+
+        return Response::html($this->app->view()->partial('partials/resumen', ['summary' => $summary]));
+    }
+
     /** Paso 1 (envío del formulario). */
     public function submit(Request $request, array $args = []): Response
     {
         if (!$this->csrfValid($request)) {
-            $this->flash('error', 'La sesión ha caducado. Revisa los datos y vuelve a enviarlos.');
+            $this->flash('error', $this->t('La sesión ha caducado. Revisa los datos y vuelve a enviarlos.'));
 
             return $this->redirect('/checkout');
         }
@@ -61,7 +98,21 @@ final class CheckoutController extends Controller
             return $this->redirect('/carrito');
         }
 
-        $validator = new Validator(
+        // Las dos opciones que cambian el total se guardan siempre que sean
+        // válidas, aunque el resto del formulario tenga errores: así el resumen
+        // que se vuelve a pintar coincide con lo que el cliente ha marcado.
+        $this->rememberOptions($request);
+
+        // Sin JavaScript, el botón «Actualizar total» reenvía el formulario solo
+        // para recalcular: se conserva lo ya escrito y todavía no se valida nada.
+        if ($request->input('accion') === 'recalcular') {
+            $this->app->session()->forget('_checkout_errors');
+            $this->app->session()->flashInput($request->all());
+
+            return $this->redirect('/checkout');
+        }
+
+        $validator = $this->validate(
             $request->all(),
             [
                 'nombre'        => 'requerido|min:3|max:80',
@@ -76,16 +127,16 @@ final class CheckoutController extends Controller
                 'condiciones'   => 'aceptado',
             ],
             [
-                'nombre'        => 'Nombre y apellidos',
-                'email'         => 'Correo electrónico',
-                'telefono'      => 'Teléfono',
-                'direccion'     => 'Dirección',
-                'codigo_postal' => 'Código postal',
-                'ciudad'        => 'Población',
-                'provincia'     => 'Provincia',
-                'metodo_envio'  => 'Método de envío',
-                'notas'         => 'Notas para la entrega',
-                'condiciones'   => 'las condiciones del prototipo',
+                'nombre'        => $this->t('Nombre y apellidos'),
+                'email'         => $this->t('Correo electrónico'),
+                'telefono'      => $this->t('Teléfono'),
+                'direccion'     => $this->t('Dirección'),
+                'codigo_postal' => $this->t('Código postal'),
+                'ciudad'        => $this->t('Población'),
+                'provincia'     => $this->t('Provincia'),
+                'metodo_envio'  => $this->t('Método de envío'),
+                'notas'         => $this->t('Notas para la entrega'),
+                'condiciones'   => $this->t('las condiciones del prototipo'),
             ]
         );
 
@@ -94,18 +145,32 @@ final class CheckoutController extends Controller
         if ($validator->fails()) {
             $session->put('_checkout_errors', $validator->errors());
             $session->flashInput($request->all());
-            $this->flash('error', 'Revisa los campos marcados para poder continuar.');
+            $this->flash('error', $this->t('Revisa los campos marcados para poder continuar.'));
 
             return $this->redirect('/checkout');
         }
 
         $data = $validator->validated();
         $session->forget('_checkout_errors');
-        $session->put('metodo_envio', $data['metodo_envio']);
-        $session->put('envoltorio', $request->input('envoltorio') !== null);
         $session->put('checkout', $data);
 
         return $this->redirect('/pago');
+    }
+
+    /**
+     * Guarda en la sesión el método de envío (si es uno de los configurados)
+     * y si se ha marcado el envoltorio de regalo.
+     */
+    private function rememberOptions(Request $request): void
+    {
+        $session = $this->app->session();
+        $method  = (string) $request->input('metodo_envio', '');
+
+        if (array_key_exists($method, $this->app->pricing()->shippingMethods())) {
+            $session->put('metodo_envio', $method);
+        }
+
+        $session->put('envoltorio', $request->input('envoltorio') !== null);
     }
 
     /** Paso 2: pasarela de pago simulada. */
@@ -116,7 +181,7 @@ final class CheckoutController extends Controller
         $items    = $this->app->cart()->items();
 
         if (!is_array($checkout) || $items === []) {
-            $this->flash('aviso', 'Necesitamos tus datos de envío antes de pasar al pago.');
+            $this->flash('aviso', $this->t('Necesitamos tus datos de envío antes de pasar al pago.'));
 
             return $this->redirect($items === [] ? '/carrito' : '/checkout');
         }
@@ -129,7 +194,7 @@ final class CheckoutController extends Controller
         );
 
         return $this->view('checkout/pago', [
-            'title'     => 'Pago simulado',
+            'title'     => $this->t('Pago simulado'),
             'items'     => $items,
             'summary'   => $summary,
             'checkout'  => $checkout,
@@ -144,7 +209,7 @@ final class CheckoutController extends Controller
         $session = $this->app->session();
 
         if (!$this->csrfValid($request)) {
-            $this->flash('error', 'La sesión ha caducado. Vuelve a introducir los datos de pago.');
+            $this->flash('error', $this->t('La sesión ha caducado. Vuelve a introducir los datos de pago.'));
 
             return $this->redirect('/pago');
         }
@@ -156,7 +221,7 @@ final class CheckoutController extends Controller
             return $this->redirect('/carrito');
         }
 
-        $validator = new Validator(
+        $validator = $this->validate(
             $request->all(),
             [
                 'titular'        => 'requerido|min:3|max:80',
@@ -165,16 +230,16 @@ final class CheckoutController extends Controller
                 'cvv'            => 'requerido|digitos|min:3|max:4',
             ],
             [
-                'titular'        => 'Titular de la tarjeta',
-                'numero_tarjeta' => 'Número de tarjeta',
-                'caducidad'      => 'Caducidad',
-                'cvv'            => 'CVV',
+                'titular'        => $this->t('Titular de la tarjeta'),
+                'numero_tarjeta' => $this->t('Número de tarjeta'),
+                'caducidad'      => $this->t('Caducidad'),
+                'cvv'            => $this->t('CVV'),
             ]
         );
 
         if ($validator->fails()) {
             $session->put('_payment_errors', $validator->errors());
-            $this->flash('error', 'Los datos de la tarjeta de prueba no son válidos.');
+            $this->flash('error', $this->t('Los datos de la tarjeta de prueba no son válidos.'));
 
             return $this->redirect('/pago');
         }
@@ -189,7 +254,7 @@ final class CheckoutController extends Controller
         );
 
         // --- Pedido: se reutiliza el pendiente si el pago falló antes ---
-        $order = $this->pendingOrder();
+        $order = $this->pendingOrder($summary);
 
         if ($order === null) {
             try {
@@ -200,7 +265,8 @@ final class CheckoutController extends Controller
                     $session->id()
                 );
             } catch (RuntimeException $e) {
-                $this->flash('error', $e->getMessage());
+                error_log('[kitsune-notes] ' . $e->getMessage());
+                $this->flash('error', $this->t('No se ha podido generar el pedido. Vuelve a intentarlo en unos minutos.'));
 
                 return $this->redirect('/pago');
             }
@@ -223,7 +289,8 @@ final class CheckoutController extends Controller
                 'resultado'         => $result['status'],
                 'motivo_rechazo'    => $result['decline_reason'],
                 'importe_cents'     => $result['amount_cents'],
-                'moneda'            => 'EUR',
+                'moneda'            => (string) $order['currency'],
+                'importe_eur_cents' => (int) $order['total_base_cents'],
                 'metodo'            => 'tarjeta',
                 'marca_tarjeta'     => $result['card_brand'],
                 'ultimos_4'         => $result['card_last4'],
@@ -233,11 +300,12 @@ final class CheckoutController extends Controller
         );
 
         if (!$result['approved']) {
-            $this->flash(
-                'error',
-                'El pago simulado ha sido rechazado: ' . $result['decline_reason']
-                . ' El pedido ' . $order['reference'] . ' queda pendiente de pago; puedes reintentarlo.'
-            );
+            // El motivo se guarda en español (es el dato del back-office) y se
+            // traduce al mostrárselo al cliente.
+            $this->flash('error', $this->t(
+                'El pago simulado ha sido rechazado: {motivo} El pedido {referencia} queda pendiente de pago; puedes reintentarlo.',
+                ['motivo' => $this->t((string) $result['decline_reason']), 'referencia' => $order['reference']]
+            ));
 
             return $this->redirect('/pago');
         }
@@ -287,10 +355,21 @@ final class CheckoutController extends Controller
         }
     }
 
-    /** @return array<string, mixed>|null pedido creado y aún sin pagar */
-    private function pendingOrder(): ?array
+    /**
+     * Pedido creado y aún sin pagar que se puede reutilizar para reintentar
+     * el cobro. Solo vale si sigue correspondiendo a lo que el cliente está
+     * viendo: misma moneda y mismo total. Si entre un intento y otro ha
+     * cambiado de idioma (y, con él, de moneda) o ha modificado el carrito,
+     * el pedido pendiente se cancela y se genera uno nuevo, para no cobrar
+     * nunca un importe distinto del que aparece en pantalla.
+     *
+     * @param array<string, mixed> $summary
+     * @return array<string, mixed>|null
+     */
+    private function pendingOrder(array $summary): ?array
     {
-        $reference = $this->app->session()->get('pedido_pendiente');
+        $session   = $this->app->session();
+        $reference = $session->get('pedido_pendiente');
 
         if (!is_string($reference) || $reference === '') {
             return null;
@@ -298,7 +377,36 @@ final class CheckoutController extends Controller
 
         $order = $this->app->orders()->findByReference($reference);
 
-        return $order !== null && $order['status'] === 'creado' ? $order : null;
+        if ($order === null || $order['status'] !== 'creado') {
+            return null;
+        }
+
+        if ((string) $order['currency'] === (string) $summary['currency']
+            && (int) $order['total_cents'] === (int) $summary['total_cents']) {
+            return $order;
+        }
+
+        $changed = $this->app->orderService()->cancelUnpaid(
+            $order,
+            'El cliente cambió el carrito o la moneda antes de pagar: se sustituye por un pedido nuevo.'
+        );
+
+        if ($changed) {
+            $this->app->events()->record(
+                EventRecorder::ORDER_STATUS_CHANGED,
+                [
+                    'referencia'      => $order['reference'],
+                    'estado_anterior' => 'creado',
+                    'estado_nuevo'    => 'cancelado',
+                    'origen'          => 'checkout',
+                ],
+                ['order_id' => (int) $order['id'], 'customer_id' => (int) $order['customer_id'], 'actor_type' => 'sistema']
+            );
+        }
+
+        $session->forget('pedido_pendiente');
+
+        return null;
     }
 
     /**
@@ -330,6 +438,9 @@ final class CheckoutController extends Controller
                 'unidades'          => (int) $summary['unit_count'],
                 'importe_articulos' => (int) $summary['items_total_cents'],
                 'total_estimado'    => (int) $summary['total_cents'],
+                'moneda'            => (string) $summary['currency'],
+                'total_estimado_eur_cents' => (int) $summary['total_base_cents'],
+                'idioma'            => (string) $summary['locale'],
                 'cupon'             => $summary['coupon_code'],
                 'metodo_envio'      => $summary['shipping_method'],
                 'skus'              => array_map(
@@ -358,6 +469,7 @@ final class CheckoutController extends Controller
                         'nombre'       => (string) $item['product']['name'],
                         'cantidad'     => (int) $item['quantity'],
                         'precio_cents' => (int) $item['product']['price_cents'],
+                        'precio_eur_cents' => (int) $item['product']['price_base_cents'],
                     ],
                     $items
                 ),
@@ -369,7 +481,12 @@ final class CheckoutController extends Controller
                 'base_imponible'     => (int) $summary['taxable_base_cents'],
                 'iva_cents'          => (int) $summary['tax_cents'],
                 'total_cents'        => (int) $summary['total_cents'],
-                'moneda'             => 'EUR',
+                // Todos los importes anteriores están en «moneda». Para sumar
+                // pedidos de monedas distintas se usa el contravalor en euros.
+                'moneda'             => (string) $summary['currency'],
+                'idioma'             => (string) $summary['locale'],
+                'tipo_cambio'        => Money::rateToDecimal((int) $summary['fx_rate_micros']),
+                'total_eur_cents'    => (int) $summary['total_base_cents'],
                 'cupon'              => $summary['coupon_code'],
                 'metodo_envio'       => $summary['shipping_method'],
                 'provincia_envio'    => $order['shipping_province'],

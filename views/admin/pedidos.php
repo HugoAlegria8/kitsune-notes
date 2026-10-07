@@ -64,7 +64,7 @@
                         </td>
                         <td><span class="insignia insignia--<?= $this->e($badge['tone']) ?>"><?= $this->e($badge['label']) ?></span></td>
                         <td class="num"><?= (int) $order['line_count'] ?></td>
-                        <td class="num"><?= $this->money((int) $order['total_cents']) ?></td>
+                        <td class="num"><?= $this->money((int) $order['total_cents'], (string) $order['currency']) ?></td>
                         <td><?= $this->date($order['created_at']) ?></td>
                         <td>
                             <a class="btn btn--secundario btn--pequeno"

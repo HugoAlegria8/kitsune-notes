@@ -30,19 +30,27 @@ final class OrderRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO orders
-                (reference, customer_id, status, currency, items_total_cents, discount_cents,
+                (reference, customer_id, status, currency, locale, fx_rate_micros, total_base_cents,
+                 items_total_cents, discount_cents,
                  shipping_cents, giftwrap_cents, taxable_base_cents, tax_cents, total_cents, coupon_code,
                  shipping_method, shipping_name, shipping_address, shipping_postal_code, shipping_city,
                  shipping_province, shipping_country, gift_wrap, customer_notes, session_id,
                  created_at, updated_at)
              VALUES
-                (:reference, :customer_id, :status, :currency, :items_total_cents, :discount_cents,
+                (:reference, :customer_id, :status, :currency, :locale, :fx_rate_micros, :total_base_cents,
+                 :items_total_cents, :discount_cents,
                  :shipping_cents, :giftwrap_cents, :taxable_base_cents, :tax_cents, :total_cents, :coupon_code,
                  :shipping_method, :shipping_name, :shipping_address, :shipping_postal_code, :shipping_city,
                  :shipping_province, :shipping_country, :gift_wrap, :customer_notes, :session_id,
                  :created_at, :updated_at)'
         );
-        $stmt->execute($data);
+
+        // Un pedido sin estos datos es un pedido en euros y en español.
+        $stmt->execute($data + [
+            'locale'           => 'es',
+            'fx_rate_micros'   => 1000000,
+            'total_base_cents' => (int) ($data['total_cents'] ?? 0),
+        ]);
 
         return (int) $this->pdo->lastInsertId();
     }
@@ -195,11 +203,40 @@ final class OrderRepository
         return $counts;
     }
 
+    /**
+     * Ingresos acumulados en la moneda base (euros). Se suma el contravalor
+     * guardado con cada pedido, no su total: los pedidos pueden estar en
+     * monedas distintas y sumar libras con euros no tendría sentido.
+     */
     public function totalRevenueCents(): int
     {
         return (int) $this->pdo->query(
-            "SELECT COALESCE(SUM(total_cents), 0) FROM orders WHERE status <> 'cancelado'"
+            "SELECT COALESCE(SUM(total_base_cents), 0) FROM orders WHERE status <> 'cancelado'"
         )->fetchColumn();
+    }
+
+    /**
+     * Ventas por moneda de compra, sin los pedidos cancelados.
+     *
+     * @return list<array{currency:string, orders:int, total_cents:int, total_base_cents:int}>
+     */
+    public function revenueByCurrency(): array
+    {
+        $rows = $this->pdo->query(
+            "SELECT currency, COUNT(*) AS orders, COALESCE(SUM(total_cents), 0) AS total_cents,
+                    COALESCE(SUM(total_base_cents), 0) AS total_base_cents
+               FROM orders
+              WHERE status <> 'cancelado'
+              GROUP BY currency
+              ORDER BY currency"
+        )->fetchAll();
+
+        return array_map(static fn (array $row): array => [
+            'currency'         => (string) $row['currency'],
+            'orders'           => (int) $row['orders'],
+            'total_cents'      => (int) $row['total_cents'],
+            'total_base_cents' => (int) $row['total_base_cents'],
+        ], $rows);
     }
 
     public function count(): int

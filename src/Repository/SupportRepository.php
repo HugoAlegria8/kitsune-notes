@@ -31,8 +31,8 @@ final class SupportRepository
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO support_tickets
-                (reference, order_reference, customer_name, customer_email, type, subject, message, status, created_at)
-             VALUES (:reference, :order_reference, :customer_name, :customer_email, :type, :subject, :message, :status, :created_at)'
+                (reference, order_reference, customer_name, customer_email, type, subject, message, status, created_at, locale)
+             VALUES (:reference, :order_reference, :customer_name, :customer_email, :type, :subject, :message, :status, :created_at, :locale)'
         );
         $stmt->execute([
             'reference'       => $reference,
@@ -44,6 +44,8 @@ final class SupportRepository
             'message'         => $data['message'],
             'status'          => 'abierta',
             'created_at'      => $now->format(DATE_ATOM),
+            // Idioma en que escribe el cliente: el acuse de recibo sale en él.
+            'locale'          => (string) ($data['locale'] ?? 'es'),
         ]);
 
         return $reference;

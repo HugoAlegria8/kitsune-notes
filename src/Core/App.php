@@ -19,6 +19,8 @@ use KitsuneNotes\Repository\SupportRepository;
 use KitsuneNotes\Service\AuthService;
 use KitsuneNotes\Service\CartService;
 use KitsuneNotes\Service\CatalogAdminService;
+use KitsuneNotes\Service\CatalogLocalizer;
+use KitsuneNotes\Service\CurrencyService;
 use KitsuneNotes\Service\EventRecorder;
 use KitsuneNotes\Service\InvoiceService;
 use KitsuneNotes\Service\Mailer;
@@ -135,22 +137,96 @@ final class App
     }
 
     // -----------------------------------------------------------------
+    // Idioma y moneda
+    // -----------------------------------------------------------------
+
+    public function translator(): Translator
+    {
+        return $this->instances[Translator::class] ??= new Translator(
+            $this->basePathDir . '/lang',
+            (array) $this->config('i18n.locales', ['es' => []]),
+            (string) $this->config('i18n.default', 'es')
+        );
+    }
+
+    public function currency(): CurrencyService
+    {
+        return $this->instances[CurrencyService::class] ??= new CurrencyService(
+            (array) $this->config('commerce'),
+            $this->translator()
+        );
+    }
+
+    /** Adapta las filas del catálogo al idioma y a la moneda activos. */
+    public function localizer(): CatalogLocalizer
+    {
+        return $this->instances[CatalogLocalizer::class] ??= new CatalogLocalizer(
+            $this->translator(),
+            $this->currency()
+        );
+    }
+
+    /**
+     * Fija el idioma de la petición. Se llama una vez desde el front controller.
+     *
+     *  - Los botones ES/EN de la cabecera enlazan a la misma página con
+     *    «?idioma=en»: se guarda la elección en una cookie técnica y se
+     *    redirige a la dirección sin el parámetro (devuelve esa redirección).
+     *  - Sin parámetro, vale el idioma de la cookie; sin cookie, el español.
+     *  - El back-office y el API solo existen en español: ahí la cookie no
+     *    se tiene en cuenta ni se modifica.
+     */
+    public function bootLocale(Request $request): ?Response
+    {
+        $path = $request->path();
+
+        if ($path === '/admin' || str_starts_with($path, '/admin/') || str_starts_with($path, '/api/')) {
+            return null;
+        }
+
+        $translator = $this->translator();
+        $cookieName = (string) $this->config('i18n.cookie_name', 'kitsune_idioma');
+        $requested  = (string) ($request->query('idioma') ?? '');
+
+        if ($requested !== '' && $request->method() === 'GET' && $translator->supports($requested)) {
+            $query = $request->queryAll();
+            unset($query['idioma']);
+
+            $days = max(1, (int) $this->config('i18n.cookie_days', 180));
+
+            return Response::redirect(
+                $this->view()->url($path) . ($query !== [] ? '?' . http_build_query($query) : '')
+            )->withCookie($cookieName, $requested, [
+                'expires'  => time() + $days * 86400,
+                'path'     => '/',
+                'secure'   => $request->isSecure(),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+        }
+
+        $translator->setLocale((string) ($request->cookie($cookieName) ?? ''));
+
+        return null;
+    }
+
+    // -----------------------------------------------------------------
     // Repositorios (acceso a datos)
     // -----------------------------------------------------------------
 
     public function products(): ProductRepository
     {
-        return $this->instances[ProductRepository::class] ??= new ProductRepository($this->pdo());
+        return $this->instances[ProductRepository::class] ??= new ProductRepository($this->pdo(), $this->localizer());
     }
 
     public function categories(): CategoryRepository
     {
-        return $this->instances[CategoryRepository::class] ??= new CategoryRepository($this->pdo());
+        return $this->instances[CategoryRepository::class] ??= new CategoryRepository($this->pdo(), $this->localizer());
     }
 
     public function designLines(): DesignLineRepository
     {
-        return $this->instances[DesignLineRepository::class] ??= new DesignLineRepository($this->pdo());
+        return $this->instances[DesignLineRepository::class] ??= new DesignLineRepository($this->pdo(), $this->localizer());
     }
 
     public function customers(): CustomerRepository
@@ -215,7 +291,9 @@ final class App
     {
         return $this->instances[PricingService::class] ??= new PricingService(
             (array) $this->config('commerce'),
-            $this->coupons()
+            $this->coupons(),
+            $this->currency(),
+            $this->translator()
         );
     }
 
@@ -262,7 +340,9 @@ final class App
             $this->events(),
             (array) $this->config('company'),
             (array) $this->config('invoicing'),
-            (array) $this->config('commerce')
+            (array) $this->config('commerce'),
+            $this->translator(),
+            $this->currency()
         );
     }
 
@@ -281,7 +361,8 @@ final class App
             $this->mailer(),
             $this->view(),
             $this->invoices(),
-            (array) $this->config('company')
+            (array) $this->config('company'),
+            $this->translator()
         );
     }
 

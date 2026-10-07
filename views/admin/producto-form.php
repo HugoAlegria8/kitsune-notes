@@ -185,6 +185,9 @@ $invalido = static fn (string $campo, string $id = ''): string => isset($errors[
                 </div>
                 <p class="pista" style="margin:0; font-size:.84rem; color:var(--frambuesa-tenue)">
                     El IVA aplicado es el general del 21 %: la tienda desglosa base y cuota a partir del precio.
+                    El precio se escribe siempre en euros; en la versión en inglés se muestra en libras con el
+                    tipo de cambio de la configuración
+                    (<?= $this->e($this->app()->currency()->rateLabel('GBP')) ?>).
                 </p>
             </div>
         </section>
@@ -219,6 +222,51 @@ $invalido = static fn (string $campo, string $id = ''): string => isset($errors[
                         <p class="campo__error" id="err-especificaciones"><?= $this->e($error('especificaciones')) ?></p>
                     <?php else: ?>
                         <p class="pista">Una característica por línea con el formato «Clave: valor».</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </section>
+
+        <?php /* Versión en inglés de los textos. Es opcional: lo que quede vacío se muestra en
+                 español en la tienda en inglés, así que un producto nuevo nunca se queda sin nombre. */ ?>
+        <section class="panel">
+            <div class="panel__cabecera"><h2>Versión en inglés <span style="font-weight:500; font-size:.85rem">(opcional)</span></h2></div>
+            <div class="panel__cuerpo">
+                <p class="pista" style="margin:0 0 1rem">
+                    Estos textos son los que ve quien pulsa el botón EN de la tienda. Lo que dejes vacío
+                    se mostrará en español. El país de origen se traduce solo.
+                </p>
+
+                <div class="campo">
+                    <label for="nombre_en">Nombre en inglés</label>
+                    <input type="text" id="nombre_en" name="nombre_en" maxlength="120" lang="en"
+                           value="<?= $this->e($value('nombre_en')) ?>" <?= $invalido('nombre_en') ?>>
+                    <?php if ($error('nombre_en')): ?><p class="campo__error" id="err-nombre_en"><?= $this->e($error('nombre_en')) ?></p><?php endif; ?>
+                </div>
+
+                <div class="campo">
+                    <label for="resumen_en">Resumen en inglés</label>
+                    <textarea id="resumen_en" name="resumen_en" maxlength="300" style="min-height:80px" lang="en"
+                              <?= $invalido('resumen_en') ?>><?= $this->e($value('resumen_en')) ?></textarea>
+                    <?php if ($error('resumen_en')): ?><p class="campo__error" id="err-resumen_en"><?= $this->e($error('resumen_en')) ?></p><?php endif; ?>
+                </div>
+
+                <div class="campo">
+                    <label for="descripcion_en">Descripción en inglés</label>
+                    <textarea id="descripcion_en" name="descripcion_en" maxlength="3000" style="min-height:160px" lang="en"
+                              <?= $invalido('descripcion_en') ?>><?= $this->e($value('descripcion_en')) ?></textarea>
+                    <?php if ($error('descripcion_en')): ?><p class="campo__error" id="err-descripcion_en"><?= $this->e($error('descripcion_en')) ?></p><?php endif; ?>
+                </div>
+
+                <div class="campo" style="margin-bottom:0">
+                    <label for="especificaciones_en">Ficha técnica en inglés</label>
+                    <textarea id="especificaciones_en" name="especificaciones_en" maxlength="2000" lang="en"
+                              placeholder="Format: A5 (148 × 210 mm)&#10;Pages: 192&#10;Paper weight: 100 gsm"
+                              <?= $invalido('especificaciones_en') ?>><?= $this->e($value('especificaciones_en')) ?></textarea>
+                    <?php if ($error('especificaciones_en')): ?>
+                        <p class="campo__error" id="err-especificaciones_en"><?= $this->e($error('especificaciones_en')) ?></p>
+                    <?php else: ?>
+                        <p class="pista">Mismo formato que la ficha en español: «Clave: valor», una por línea.</p>
                     <?php endif; ?>
                 </div>
             </div>

@@ -15,7 +15,7 @@ final class PageController extends Controller
     public function about(Request $request, array $args = []): Response
     {
         return $this->view('page/sobre', [
-            'title'       => 'Sobre Kitsune Notes',
+            'title'       => $this->t('Sobre Kitsune Notes'),
             'designLines' => $this->app->designLines()->all(),
         ]);
     }
@@ -28,7 +28,7 @@ final class PageController extends Controller
     public function collections(Request $request, array $args = []): Response
     {
         return $this->view('page/colecciones', [
-            'title'       => 'Colecciones',
+            'title'       => $this->t('Colecciones'),
             'designLines' => $this->app->designLines()->all(),
         ]);
     }
@@ -42,12 +42,14 @@ final class PageController extends Controller
     public function academic(Request $request, array $args = []): Response
     {
         return $this->view('page/aviso-academico', [
-            'title'         => 'Aviso: prototipo académico',
+            'title'         => $this->t('Aviso: prototipo académico'),
             'testCards'     => PaymentSimulator::testCards(),
             'events'        => EventRecorder::CATALOG,
             'sessionCookie' => session_name(),
             'noticeCookie'  => (string) $this->app->config('privacy.cookie_notice_name'),
             'noticeDays'    => (int) $this->app->config('privacy.cookie_notice_days', 180),
+            'localeCookie'  => (string) $this->app->config('i18n.cookie_name', 'kitsune_idioma'),
+            'localeDays'    => (int) $this->app->config('i18n.cookie_days', 180),
         ]);
     }
 
@@ -82,7 +84,7 @@ final class PageController extends Controller
     public function shipping(Request $request, array $args = []): Response
     {
         return $this->view('page/envios', [
-            'title'           => 'Envíos y devoluciones (simulado)',
+            'title'           => $this->t('Envíos y devoluciones (simulado)'),
             'shippingMethods' => $this->app->pricing()->shippingMethods(),
             'giftwrapCents'   => $this->app->pricing()->giftwrapCents(),
             'coupons'         => $this->app->pricing()->activeCoupons(),

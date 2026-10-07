@@ -6,7 +6,6 @@ namespace KitsuneNotes\Controller;
 
 use KitsuneNotes\Core\Request;
 use KitsuneNotes\Core\Response;
-use KitsuneNotes\Core\Validator;
 use KitsuneNotes\Service\EventRecorder;
 use KitsuneNotes\Service\Mailer;
 use KitsuneNotes\Service\Notifier;
@@ -28,23 +27,23 @@ final class OrderController extends Controller
         $order     = $this->app->orders()->findByReference($reference);
 
         if ($order === null) {
-            return $this->notFound('No encontramos ningún pedido con la referencia ' . $reference . '.');
+            return $this->notFound($this->t('No encontramos ningún pedido con la referencia {referencia}.', ['referencia' => $reference]));
         }
 
         $own = (array) $this->app->session()->get('pedidos_propios', []);
 
         if (!in_array($reference, $own, true)) {
-            $this->flash('aviso', 'Para ver este pedido, confirma el correo electrónico con el que se realizó.');
+            $this->flash('aviso', $this->t('Para ver este pedido, confirma el correo electrónico con el que se realizó.'));
 
             return $this->view('order/consulta', [
-                'title'     => 'Consulta tu pedido',
+                'title'     => $this->t('Consulta tu pedido'),
                 'reference' => $reference,
                 'errors'    => [],
             ]);
         }
 
         return $this->view('order/detalle', [
-            'title'    => 'Pedido ' . $order['reference'],
+            'title'    => $this->t('Pedido {referencia}', ['referencia' => $order['reference']]),
             'order'    => $order,
             'lines'    => $this->app->orders()->lines((int) $order['id']),
             'payments' => $this->app->payments()->forOrder((int) $order['id']),
@@ -89,7 +88,7 @@ final class OrderController extends Controller
         $order     = $this->app->orders()->findByReference($reference);
 
         if ($order === null) {
-            return $this->notFound('No encontramos ningún pedido con la referencia ' . $reference . '.');
+            return $this->notFound($this->t('No encontramos ningún pedido con la referencia {referencia}.', ['referencia' => $reference]));
         }
 
         $invoice   = $this->app->invoices()->forOrder((int) $order['id']);
@@ -98,29 +97,30 @@ final class OrderController extends Controller
             && $this->app->invoices()->verify($invoice, (string) $request->query('f', ''));
 
         if (!in_array($reference, $own, true) && !$viaLink) {
-            $this->flash('aviso', 'Para ver la factura, confirma el correo electrónico con el que se hizo el pedido.');
+            $this->flash('aviso', $this->t('Para ver la factura, confirma el correo electrónico con el que se hizo el pedido.'));
 
             return $this->view('order/consulta', [
-                'title'     => 'Consulta tu pedido',
+                'title'     => $this->t('Consulta tu pedido'),
                 'reference' => $reference,
                 'errors'    => [],
             ]);
         }
 
         if ($invoice === null) {
-            return $this->notFound(
-                'El pedido ' . $reference . ' todavía no tiene factura: se expide cuando el pago queda confirmado.'
-            );
+            return $this->notFound($this->t(
+                'El pedido {referencia} todavía no tiene factura: se expide cuando el pago queda confirmado.',
+                ['referencia' => $reference]
+            ));
         }
 
         $this->recordViewed($order, $invoice, $viaLink && !in_array($reference, $own, true));
 
         return $this->view('invoice/ver', [
-            'title'     => 'Factura ' . $invoice['number'],
+            'title'     => $this->t('Factura {numero}', ['numero' => $invoice['number']]),
             'invoice'   => $invoice,
             'doc'       => $invoice['doc'],
             'backUrl'   => '/pedido/' . $order['reference'],
-            'backLabel' => 'Volver al pedido',
+            'backLabel' => $this->t('Volver al pedido'),
         ]);
     }
 
@@ -158,7 +158,7 @@ final class OrderController extends Controller
     public function lookupForm(Request $request, array $args = []): Response
     {
         return $this->view('order/consulta', [
-            'title'     => 'Consulta tu pedido',
+            'title'     => $this->t('Consulta tu pedido'),
             'reference' => strtoupper((string) $request->query('referencia', '')),
             'errors'    => [],
         ]);
@@ -171,15 +171,15 @@ final class OrderController extends Controller
             return $this->redirect('/pedidos');
         }
 
-        $validator = new Validator(
+        $validator = $this->validate(
             $request->all(),
             ['referencia' => 'requerido|max:32', 'email' => 'requerido|email'],
-            ['referencia' => 'Referencia del pedido', 'email' => 'Correo electrónico']
+            ['referencia' => $this->t('Referencia del pedido'), 'email' => $this->t('Correo electrónico')]
         );
 
         if ($validator->fails()) {
             return $this->view('order/consulta', [
-                'title'     => 'Consulta tu pedido',
+                'title'     => $this->t('Consulta tu pedido'),
                 'reference' => (string) $request->input('referencia', ''),
                 'errors'    => $validator->errors(),
             ]);
@@ -190,10 +190,10 @@ final class OrderController extends Controller
         $order     = $this->app->orders()->findByReference($reference);
 
         if ($order === null || mb_strtolower((string) $order['customer_email']) !== $email) {
-            $this->flash('error', 'No hay ningún pedido que coincida con esos datos.');
+            $this->flash('error', $this->t('No hay ningún pedido que coincida con esos datos.'));
 
             return $this->view('order/consulta', [
-                'title'     => 'Consulta tu pedido',
+                'title'     => $this->t('Consulta tu pedido'),
                 'reference' => $reference,
                 'errors'    => [],
             ]);

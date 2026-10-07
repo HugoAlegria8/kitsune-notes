@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace KitsuneNotes\Service;
 
 use DateTimeImmutable;
+use KitsuneNotes\Core\Translator;
 use KitsuneNotes\Core\View;
 use KitsuneNotes\Repository\SupportRepository;
 
@@ -18,6 +19,11 @@ use KitsuneNotes\Repository\SupportRepository;
  *  - pedido_enviado:    aviso de que el pedido sale del almacén.
  *  - soporte_recibido:  acuse de recibo de una solicitud de soporte.
  *  - prueba_smtp:       correo de comprobación del envío real (bin/probar-correo.php).
+ *
+ * Idioma: cada correo se redacta en el idioma del pedido (o de la solicitud
+ * de soporte), no en el de quien provoca el envío. Si el personal marca como
+ * enviado, desde el back-office en español, un pedido hecho en inglés, el
+ * cliente recibe el aviso en inglés y con los importes en su moneda.
  */
 final class Notifier
 {
@@ -39,7 +45,21 @@ final class Notifier
         private readonly View $view,
         private readonly InvoiceService $invoices,
         private readonly array $company,
+        private readonly Translator $translator,
     ) {
+    }
+
+    /**
+     * Idioma en que hay que escribir a un cliente: el guardado en su pedido o
+     * en su solicitud. Si falta o ya no está admitido, el idioma original.
+     *
+     * @param array<string, mixed>|null $row
+     */
+    private function localeOf(?array $row): string
+    {
+        $locale = (string) ($row['locale'] ?? '');
+
+        return $this->translator->supports($locale) ? $locale : $this->translator->defaultLocale();
     }
 
     /**
@@ -52,16 +72,20 @@ final class Notifier
      */
     public function orderConfirmed(array $order, array $invoice, ?DateTimeImmutable $at = null): array
     {
-        $subject = sprintf('Pedido %s confirmado · Factura %s', $order['reference'], $invoice['number']);
-
-        return $this->deliver(
+        return $this->translator->runIn($this->localeOf($order), fn (): array => $this->deliver(
             self::CONFIRMED,
             'pedido-confirmado',
             (string) $order['customer_email'],
             (string) $order['customer_name'],
-            $subject,
+            $this->translator->get(
+                'Pedido {referencia} confirmado · Factura {factura}',
+                ['referencia' => $order['reference'], 'factura' => $invoice['number']]
+            ),
             [
-                'preheader'  => 'Gracias por tu compra. Aquí tienes tu factura ' . $invoice['number'] . '.',
+                'preheader'  => $this->translator->get(
+                    'Gracias por tu compra. Aquí tienes tu factura {factura}.',
+                    ['factura' => $invoice['number']]
+                ),
                 'order'      => $order,
                 'invoice'    => $invoice,
                 'doc'        => $invoice['doc'],
@@ -70,7 +94,7 @@ final class Notifier
             ],
             ['order' => $order, 'invoice' => $invoice],
             $at
-        );
+        ));
     }
 
     /**
@@ -83,29 +107,28 @@ final class Notifier
     public function orderShipped(array $order, ?DateTimeImmutable $at = null): array
     {
         $invoice = $this->invoices->forOrder((int) $order['id']);
-        $subject = sprintf('Tu pedido %s ya va en camino', $order['reference']);
 
-        return $this->deliver(
+        return $this->translator->runIn($this->localeOf($order), fn (): array => $this->deliver(
             self::SHIPPED,
             'pedido-enviado',
             (string) $order['customer_email'],
             (string) $order['customer_name'],
-            $subject,
+            $this->translator->get('Tu pedido {referencia} ya va en camino', ['referencia' => $order['reference']]),
             [
-                'preheader' => 'Tu paquete de Kitsune Notes ha salido del almacén.',
+                'preheader' => $this->translator->get('Tu paquete de Kitsune Notes ha salido del almacén.'),
                 'order'     => $order,
                 'invoice'   => $invoice,
                 'lines'     => $invoice['doc']['lines'] ?? [],
                 'tracking'  => 'KNX' . strtoupper(substr(md5((string) $order['reference']), 0, 10)),
                 'delivery'  => (string) $order['shipping_method'] === 'express'
-                    ? 'en 24-48 horas'
-                    : 'en 3-5 días laborables',
+                    ? $this->translator->get('en 24-48 horas')
+                    : $this->translator->get('en 3-5 días laborables'),
                 'orderUrl'  => $this->orderUrl($order),
                 'invoiceUrl' => $invoice !== null ? $this->invoiceUrl($order, $invoice) : null,
             ],
             ['order' => $order, 'invoice' => $invoice],
             $at
-        );
+        ));
     }
 
     /**
@@ -118,24 +141,23 @@ final class Notifier
      */
     public function ticketReceived(array $ticket, ?array $order = null, ?DateTimeImmutable $at = null): array
     {
-        $subject = sprintf('Hemos recibido tu solicitud %s', $ticket['reference']);
-
-        return $this->deliver(
+        // El acuse sale en el idioma en que el cliente escribió la solicitud.
+        return $this->translator->runIn($this->localeOf($ticket), fn (): array => $this->deliver(
             self::SUPPORT,
             'soporte-recibido',
             (string) $ticket['customer_email'],
             (string) $ticket['customer_name'],
-            $subject,
+            $this->translator->get('Hemos recibido tu solicitud {referencia}', ['referencia' => $ticket['reference']]),
             [
-                'preheader' => 'Tu solicitud está registrada; el equipo la revisará lo antes posible.',
+                'preheader' => $this->translator->get('Tu solicitud está registrada; el equipo la revisará lo antes posible.'),
                 'ticket'    => $ticket,
-                'typeLabel' => SupportRepository::TYPES[$ticket['type']] ?? (string) $ticket['type'],
+                'typeLabel' => $this->translator->get(SupportRepository::TYPES[$ticket['type']] ?? (string) $ticket['type']),
                 'order'     => $order,
                 'orderUrl'  => $order !== null ? $this->orderUrl($order) : null,
             ],
             ['order' => $order, 'invoice' => null],
             $at
-        );
+        ));
     }
 
     /**
@@ -149,7 +171,8 @@ final class Notifier
     {
         $status = $this->mailer->status();
 
-        return $this->deliver(
+        // Es una herramienta del equipo: siempre en español.
+        return $this->translator->runIn($this->translator->defaultLocale(), fn (): array => $this->deliver(
             self::SMTP_TEST,
             'prueba-smtp',
             $toEmail,
@@ -163,7 +186,7 @@ final class Notifier
             ],
             ['order' => null, 'invoice' => null],
             null
-        );
+        ));
     }
 
     // -----------------------------------------------------------------
@@ -190,6 +213,7 @@ final class Notifier
             'subject'      => $subject,
             'company'      => $this->company,
             'realDelivery' => $this->mailer->willDeliver($toEmail),
+            'mailLocale'   => $this->translator->locale(),
         ];
 
         $html = $this->view->render('mail/' . $view, $data, 'mail/layout');
@@ -211,9 +235,19 @@ final class Notifier
                 'invoice_id'      => $invoice !== null ? (int) $invoice['id'] : null,
                 'order_reference' => $order !== null ? (string) $order['reference'] : null,
                 'invoice_number'  => $invoice !== null ? (string) $invoice['number'] : null,
+                'locale'          => $this->translator->locale(),
             ],
             $at
         );
+    }
+
+    /**
+     * Parámetro que hace que el enlace de un correo abra la tienda en el idioma
+     * del propio correo. En español no se añade nada: los enlaces no cambian.
+     */
+    private function localeParam(string $separator): string
+    {
+        return $this->translator->isDefault() ? '' : $separator . 'idioma=' . rawurlencode($this->translator->locale());
     }
 
     /**
@@ -228,12 +262,15 @@ final class Notifier
         return $this->view->absoluteUrl(
             '/pedido/' . rawurlencode((string) $order['reference']) . '/factura'
             . '?f=' . $this->invoices->signature($invoice)
+            . $this->localeParam('&')
         );
     }
 
     /** @param array<string, mixed> $order */
     private function orderUrl(array $order): string
     {
-        return $this->view->absoluteUrl('/pedidos?referencia=' . rawurlencode((string) $order['reference']));
+        return $this->view->absoluteUrl(
+            '/pedidos?referencia=' . rawurlencode((string) $order['reference']) . $this->localeParam('&')
+        );
     }
 }

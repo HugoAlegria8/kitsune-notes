@@ -8,11 +8,39 @@ namespace KitsuneNotes\Core;
  * Validador de entradas de formulario.
  *
  * Las reglas se declaran como cadenas separadas por '|', por ejemplo
- * 'requerido|email|max:120'. Todos los mensajes están en castellano
- * porque se muestran directamente en la interfaz.
+ * 'requerido|email|max:120'. Los mensajes están escritos en castellano
+ * y se muestran directamente en la interfaz; si se le pasa el traductor,
+ * salen en el idioma activo. Los nombres de los campos ($labels) deben
+ * llegar ya traducidos: en la tienda se pasan con $this->t('…').
  */
 final class Validator
 {
+    /**
+     * Mensaje de error de cada regla («*» es el genérico). El texto en español
+     * es también la clave de traducción: si se cambia uno, hay que actualizar
+     * su entrada en lang/en/comun.php. Marcadores: {campo}, {n}, {min}, {max}.
+     */
+    public const MESSAGES = [
+        'requerido' => 'El campo «{campo}» es obligatorio.',
+        'email'     => 'Introduce una dirección de correo válida en «{campo}».',
+        'min'       => '«{campo}» debe tener al menos {n} caracteres.',
+        'max'       => '«{campo}» no puede superar los {n} caracteres.',
+        'digitos'   => '«{campo}» solo admite dígitos.',
+        'longitud'  => '«{campo}» debe tener exactamente {n} caracteres.',
+        'cp'        => 'El código postal debe tener 5 dígitos.',
+        'telefono'  => 'El teléfono no tiene un formato válido.',
+        'en'        => 'El valor seleccionado en «{campo}» no es válido.',
+        'entero'    => '«{campo}» debe ser un número entero.',
+        'tarjeta'   => 'El número de tarjeta no es válido (no supera la comprobación de Luhn).',
+        'caducidad' => 'La fecha de caducidad debe tener el formato MM/AA y no estar vencida.',
+        'aceptado'  => 'Debes aceptar «{campo}» para continuar.',
+        'importe'   => '«{campo}» debe ser un importe en euros, por ejemplo 12,90.',
+        'entre'     => '«{campo}» debe estar entre {min} y {max}.',
+        'sku'       => '«{campo}» solo admite letras, números y guiones (por ejemplo KN-CUA-004).',
+        'slug'      => '«{campo}» solo admite minúsculas sin tildes, números y guiones.',
+        '*'         => 'El campo «{campo}» no es válido.',
+    ];
+
     /** @var array<string, list<string>> */
     private array $errors = [];
 
@@ -28,8 +56,17 @@ final class Validator
         private readonly array $data,
         private readonly array $rules,
         private readonly array $labels = [],
+        private readonly ?Translator $translator = null,
     ) {
         $this->run();
+    }
+
+    /** @param array<string, scalar|null> $params */
+    private function tr(string $text, array $params = []): string
+    {
+        return $this->translator !== null
+            ? $this->translator->get($text, $params)
+            : Translator::interpolate($text, $params);
     }
 
     private function run(): void
@@ -79,26 +116,14 @@ final class Validator
 
     private function message(string $rule, string $label, ?string $parameter): string
     {
-        return match ($rule) {
-            'requerido' => "El campo «{$label}» es obligatorio.",
-            'email'     => "Introduce una dirección de correo válida en «{$label}».",
-            'min'       => "«{$label}» debe tener al menos {$parameter} caracteres.",
-            'max'       => "«{$label}» no puede superar los {$parameter} caracteres.",
-            'digitos'   => "«{$label}» solo admite dígitos.",
-            'longitud'  => "«{$label}» debe tener exactamente {$parameter} caracteres.",
-            'cp'        => 'El código postal debe tener 5 dígitos.',
-            'telefono'  => 'El teléfono no tiene un formato válido.',
-            'en'        => "El valor seleccionado en «{$label}» no es válido.",
-            'entero'    => "«{$label}» debe ser un número entero.",
-            'tarjeta'   => 'El número de tarjeta no es válido (no supera la comprobación de Luhn).',
-            'caducidad' => 'La fecha de caducidad debe tener el formato MM/AA y no estar vencida.',
-            'aceptado'  => "Debes aceptar «{$label}» para continuar.",
-            'importe'   => "«{$label}» debe ser un importe en euros, por ejemplo 12,90.",
-            'entre'     => "«{$label}» debe estar entre " . str_replace(',', ' y ', (string) $parameter) . '.',
-            'sku'       => "«{$label}» solo admite letras, números y guiones (por ejemplo KN-CUA-004).",
-            'slug'      => "«{$label}» solo admite minúsculas sin tildes, números y guiones.",
-            default     => "El campo «{$label}» no es válido.",
-        };
+        $params = ['campo' => $label, 'n' => $parameter];
+
+        if ($rule === 'entre') {
+            [$min, $max] = array_pad(explode(',', (string) $parameter), 2, '');
+            $params += ['min' => $min, 'max' => $max];
+        }
+
+        return $this->tr(self::MESSAGES[$rule] ?? self::MESSAGES['*'], $params);
     }
 
     /**

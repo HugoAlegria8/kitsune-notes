@@ -41,7 +41,7 @@ final class CatalogController extends Controller
         $category = $this->app->categories()->findBySlug($args['slug'] ?? '');
 
         if ($category === null) {
-            return $this->notFound('Esa categoría no existe en el catálogo.');
+            return $this->notFound($this->t('Esa categoría no existe en el catálogo.'));
         }
 
         return $this->view('catalog/index', [
@@ -61,12 +61,12 @@ final class CatalogController extends Controller
         $line = $this->app->designLines()->findBySlug($args['slug'] ?? '');
 
         if ($line === null) {
-            return $this->notFound('Esa colección no existe.');
+            return $this->notFound($this->t('Esa colección no existe.'));
         }
 
         return $this->view('catalog/index', [
-            'title'       => 'Colección ' . $line['name'],
-            'heading'     => 'Colección ' . $line['name'],
+            'title'       => $this->t('Colección {nombre}', ['nombre' => $line['name']]),
+            'heading'     => $this->t('Colección {nombre}', ['nombre' => $line['name']]),
             'intro'       => (string) $line['description'],
             'collection'  => $line,
             'products'    => $this->app->products()->search(['coleccion' => $line['slug']]),
@@ -82,7 +82,7 @@ final class CatalogController extends Controller
         $product = $this->app->products()->findBySlug($args['slug'] ?? '');
 
         if ($product === null) {
-            return $this->notFound('Ese producto ya no está disponible.');
+            return $this->notFound($this->t('Ese producto ya no está disponible.'));
         }
 
         // ---- Instrumentación: product.viewed --------------------------
@@ -93,8 +93,12 @@ final class CatalogController extends Controller
                 'nombre'       => $product['name'],
                 'categoria'    => $product['category_slug'],
                 'coleccion'    => $product['design_line_slug'],
+                // Precio tal como lo ve el cliente (en la moneda de su idioma)
+                // y su original en euros, para poder comparar entre monedas.
                 'precio_cents' => (int) $product['price_cents'],
-                'moneda'       => 'EUR',
+                'moneda'       => (string) $product['currency'],
+                'precio_eur_cents' => (int) $product['price_base_cents'],
+                'idioma'       => $this->app->translator()->locale(),
                 'stock'        => (int) $product['stock'],
                 'origen'       => $request->query('origen', 'directo'),
             ],
@@ -116,9 +120,9 @@ final class CatalogController extends Controller
     private function catalogTitle(array $filters): string
     {
         if (($filters['q'] ?? '') !== '') {
-            return 'Resultados para «' . $filters['q'] . '»';
+            return $this->t('Resultados para «{busqueda}»', ['busqueda' => $filters['q']]);
         }
 
-        return 'Todo el catálogo';
+        return $this->t('Todo el catálogo');
     }
 }

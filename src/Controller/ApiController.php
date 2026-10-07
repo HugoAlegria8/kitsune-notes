@@ -96,7 +96,9 @@ final class ApiController extends Controller
             'meta' => [
                 'generado_en' => date(DATE_ATOM),
                 'total'       => count($products),
-                'moneda'      => 'EUR',
+                // Los datos maestros se publican siempre en la moneda base y en
+                // español; «nombre_en» es la traducción (vacía si no la tiene).
+                'moneda'      => $this->app->currency()->base(),
                 'nota'        => 'Datos ficticios de un prototipo académico.',
             ],
             'productos' => array_map(
@@ -106,6 +108,7 @@ final class ApiController extends Controller
                     return [
                         'sku'           => $p['sku'],
                         'nombre'        => $p['name'],
+                        'nombre_en'     => (string) ($p['name_en'] ?? ''),
                         'categoria'     => $p['category_slug'],
                         'coleccion'     => $p['design_line_slug'],
                         'marca'         => $p['brand'],

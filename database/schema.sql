@@ -10,6 +10,13 @@
 --     en el pedido como datos transaccionales.
 --   * Las fechas se almacenan en formato ISO-8601 (texto) en zona
 --     Europe/Madrid, con desplazamiento explícito.
+--   * Idiomas: el texto original de los datos maestros está en español.
+--     Las columnas terminadas en «_en» guardan su traducción al inglés y
+--     son opcionales: vacías, la tienda muestra el texto en español.
+--   * Monedas: los precios del catálogo están en EUROS (moneda base). Un
+--     pedido puede hacerse en otra moneda; entonces todos sus importes van
+--     en esa moneda y guarda el tipo de cambio aplicado y el contravalor
+--     del total en euros.
 -- =====================================================================
 
 PRAGMA foreign_keys = ON;
@@ -26,7 +33,11 @@ CREATE TABLE categories (
     tagline     TEXT    NOT NULL DEFAULT '',
     description TEXT    NOT NULL DEFAULT '',
     icon        TEXT    NOT NULL DEFAULT '',
-    sort_order  INTEGER NOT NULL DEFAULT 0
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    -- Traducción al inglés (vacío = se muestra el texto en español)
+    name_en        TEXT NOT NULL DEFAULT '',
+    tagline_en     TEXT NOT NULL DEFAULT '',
+    description_en TEXT NOT NULL DEFAULT ''
 );
 
 -- Línea de diseño: eje transversal a la categoría. En la tienda se presenta
@@ -41,7 +52,12 @@ CREATE TABLE design_lines (
     description   TEXT    NOT NULL DEFAULT '',
     color_primary TEXT    NOT NULL DEFAULT '#ff8fb8',
     color_soft    TEXT    NOT NULL DEFAULT '#ffe3ee',
-    sort_order    INTEGER NOT NULL DEFAULT 0
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    -- Traducción al inglés. El nombre de la colección es un nombre propio
+    -- (Kitsune, Neko…) y no se traduce.
+    mascot_en      TEXT NOT NULL DEFAULT '',     -- p. ej. «little fox»
+    tagline_en     TEXT NOT NULL DEFAULT '',
+    description_en TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE products (
@@ -65,7 +81,14 @@ CREATE TABLE products (
     is_active       INTEGER NOT NULL DEFAULT 1,   -- 0 = retirado del catálogo
     is_featured     INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT    NOT NULL,
-    updated_at      TEXT
+    updated_at      TEXT,
+    -- Traducción al inglés (vacío = se muestra el texto en español). El
+    -- precio no se traduce: es único, en euros, y se convierte al mostrarlo.
+    name_en         TEXT    NOT NULL DEFAULT '',
+    origin_en       TEXT    NOT NULL DEFAULT '',
+    summary_en      TEXT    NOT NULL DEFAULT '',
+    description_en  TEXT    NOT NULL DEFAULT '',
+    specs_json_en   TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_products_category    ON products(category_id);
@@ -121,7 +144,16 @@ CREATE TABLE orders (
     reference            TEXT    NOT NULL UNIQUE,
     customer_id          INTEGER NOT NULL REFERENCES customers(id),
     status               TEXT    NOT NULL,
+
+    -- Moneda e idioma de la compra. Todos los importes del pedido están en
+    -- «currency». fx_rate_micros es el tipo de cambio aplicado, en
+    -- millonésimas (unidades de «currency» por cada euro: 850000 = 0,85) y
+    -- total_base_cents el contravalor del total en euros, que permite sumar
+    -- pedidos hechos en monedas distintas.
     currency             TEXT    NOT NULL DEFAULT 'EUR',
+    locale               TEXT    NOT NULL DEFAULT 'es',
+    fx_rate_micros       INTEGER NOT NULL DEFAULT 1000000,
+    total_base_cents     INTEGER NOT NULL DEFAULT 0,
 
     -- Desglose económico (todos los importes con IVA salvo los marcados)
     items_total_cents    INTEGER NOT NULL DEFAULT 0,
@@ -214,7 +246,8 @@ CREATE TABLE support_tickets (
     subject         TEXT    NOT NULL,
     message         TEXT    NOT NULL,
     status          TEXT    NOT NULL DEFAULT 'abierta',
-    created_at      TEXT    NOT NULL
+    created_at      TEXT    NOT NULL,
+    locale          TEXT    NOT NULL DEFAULT 'es'   -- idioma en que escribió el cliente
 );
 
 -- ---------------------------------------------------------------------

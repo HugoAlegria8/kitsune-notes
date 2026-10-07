@@ -67,7 +67,12 @@ final class OrderService
                 'reference'            => $provisional,
                 'customer_id'          => $customerId,
                 'status'               => 'creado',
+                // Moneda e idioma de la compra, tipo de cambio aplicado y
+                // contravalor del total en euros: quedan fijados en el pedido.
                 'currency'             => (string) $summary['currency'],
+                'locale'               => (string) ($summary['locale'] ?? 'es'),
+                'fx_rate_micros'       => (int) ($summary['fx_rate_micros'] ?? 1000000),
+                'total_base_cents'     => (int) ($summary['total_base_cents'] ?? $summary['total_cents']),
                 'items_total_cents'    => (int) $summary['items_total_cents'],
                 'discount_cents'       => (int) $summary['discount_cents'],
                 'shipping_cents'       => (int) $summary['shipping_cents'],
@@ -97,7 +102,9 @@ final class OrderService
                 $product = $item['product'];
 
                 // Datos maestros congelados en la línea (snapshot): el
-                // pedido histórico no cambia si el producto se edita.
+                // pedido histórico no cambia si el producto se edita. El
+                // nombre y el precio son los que vio el cliente: en su
+                // idioma y en la moneda del pedido.
                 $this->orders->insertLine($orderId, [
                     'product_id'       => (int) $product['id'],
                     'sku'              => (string) $product['sku'],
@@ -169,6 +176,45 @@ final class OrderService
 
         $this->orders->updateStatus((int) $order['id'], $newStatus);
         $this->orders->addHistory((int) $order['id'], $current, $newStatus, $changedBy, $note);
+
+        return true;
+    }
+
+    /**
+     * Cancela un pedido que no llegó a pagarse (estado «creado») y devuelve
+     * sus unidades al stock. Se usa cuando el cliente cambia el carrito o la
+     * moneda después de un pago rechazado: ese pedido ya no corresponde a lo
+     * que ve en pantalla y se sustituye por otro.
+     *
+     * @param array<string, mixed> $order
+     */
+    public function cancelUnpaid(array $order, string $note): bool
+    {
+        if ((string) $order['status'] !== 'creado') {
+            return false;
+        }
+
+        $orderId = (int) $order['id'];
+
+        $this->pdo->beginTransaction();
+
+        try {
+            foreach ($this->orders->lines($orderId) as $line) {
+                if ($line['product_id'] !== null) {
+                    $this->products->increaseStock((int) $line['product_id'], (int) $line['quantity']);
+                }
+            }
+
+            $this->orders->updateStatus($orderId, 'cancelado');
+            $this->orders->addHistory($orderId, 'creado', 'cancelado', 'sistema', $note);
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            error_log('[kitsune-notes] No se pudo cancelar el pedido pendiente ' . $order['reference'] . ': ' . $e->getMessage());
+
+            return false;
+        }
 
         return true;
     }

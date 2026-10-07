@@ -25,6 +25,18 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: same-origin');
 
+// Idioma de la petición: lo eligen los botones ES/EN de la cabecera y se
+// recuerda en una cookie técnica. Si se acaba de elegir, se guarda y se
+// redirige a la misma página sin el parámetro «idioma».
+$localeRedirect = $app->bootLocale($request);
+
+if ($localeRedirect !== null) {
+    $localeRedirect->send();
+    exit;
+}
+
+$translate = static fn (string $text, array $params = []): string => $app->translator()->get($text, $params);
+
 try {
     $app->session()->start();
 
@@ -35,7 +47,7 @@ try {
     // Datos compartidos por todas las plantillas.
     $app->view()->share([
         'appName'        => $app->config('app.name'),
-        'academicNotice' => $app->config('app.academic_notice'),
+        'academicNotice' => $translate((string) $app->config('app.academic_notice')),
         'navCategories'  => $app->categories()->all(),
         'navDesignLines' => $app->designLines()->all(),
         'cartUnits'      => $app->cart()->unitCount(),
@@ -47,12 +59,13 @@ try {
     /** @var Router $router */
     $router = require dirname(__DIR__) . '/src/routes.php';
 
-    $router->notFound(static function (Request $request, App $app): Response {
+    $router->notFound(static function (Request $request, App $app) use ($translate): Response {
+        // La plantilla ya escapa el mensaje: aquí se pasa la ruta tal cual.
         return Response::html(
             $app->view()->render('page/error', [
-                'title'   => 'Página no encontrada',
+                'title'   => $translate('Página no encontrada'),
                 'code'    => '404',
-                'message' => 'La dirección ' . htmlspecialchars($request->path(), ENT_QUOTES) . ' no existe en la tienda.',
+                'message' => $translate('La dirección {ruta} no existe en la tienda.', ['ruta' => $request->path()]),
             ]),
             404
         );
@@ -65,12 +78,12 @@ try {
     $debug   = (bool) $app->config('app.debug');
     $details = $debug
         ? $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')'
-        : 'Se ha producido un error inesperado. Vuelve a intentarlo en unos minutos.';
+        : $translate('Se ha producido un error inesperado. Vuelve a intentarlo en unos minutos.');
 
     try {
         $response = Response::html(
             $app->view()->render('page/error', [
-                'title'   => 'Error del servidor',
+                'title'   => $translate('Error del servidor'),
                 'code'    => '500',
                 'message' => $details,
             ]),
@@ -87,3 +100,11 @@ try {
 }
 
 $response->send();
+
+// Ayuda para quien amplíe la tienda: en modo depuración se anotan en el registro
+// de errores los textos que se han mostrado sin traducir (han salido en español).
+if ($app->config('app.debug')) {
+    foreach ($app->translator()->missing() as $locale => $texts) {
+        error_log('[kitsune-notes] Sin traducir (' . $locale . '): ' . implode(' | ', $texts));
+    }
+}
