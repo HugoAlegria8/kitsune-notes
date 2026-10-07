@@ -41,7 +41,6 @@ $router->post('/carrito/cupon',      [CartController::class, 'coupon']);
 // --- Checkout y pago simulado ---------------------------------------
 $router->get('/checkout',            [CheckoutController::class, 'index']);
 $router->post('/checkout',           [CheckoutController::class, 'submit']);
-$router->get('/checkout/resumen',    [CheckoutController::class, 'summary']);
 $router->get('/pago',                [CheckoutController::class, 'payment']);
 $router->post('/pago',               [CheckoutController::class, 'processPayment']);
 

@@ -53,77 +53,56 @@
     });
 
     /**
-     * Checkout: al cambiar el método de envío o marcar el envoltorio, el resumen
-     * se vuelve a pedir al servidor y se repinta. Aquí no se calcula ningún
-     * importe: el servidor devuelve el fragmento HTML ya calculado con las
-     * mismas reglas que se aplicarán al pedido.
-     *
-     * Sin JavaScript (o si la petición falla) queda visible el botón
-     * «Actualizar total», que recalcula recargando la página.
+     * Checkout: el total cambia al elegir otro método de envío o marcar el
+     * envoltorio. La página ya trae calculado por el servidor el resumen de
+     * cada combinación (un bloque por combinación; solo uno sin «hidden») y en
+     * los navegadores actuales basta el CSS (:has) para enseñar el que toca,
+     * incluso sin JavaScript. Este bloque hace lo mismo donde no hay :has():
+     * deja sin «hidden» el bloque que corresponde a lo marcado. Aquí no se
+     * calcula ningún importe ni se pide nada al servidor.
      */
     document.querySelectorAll('[data-resumen-vivo]').forEach(function (zona) {
-        var formulario = zona.closest ? zona.closest('form') : null;
-        var url = zona.getAttribute('data-url');
+        var formulario = zona.closest ? zona.closest('[data-checkout]') : null;
 
-        if (!formulario || !url || !window.fetch) {
+        if (!formulario) {
             return;
         }
 
-        var respaldo = formulario.querySelector('[data-recalcular]');
+        var variantes = zona.querySelectorAll('.resumen__variante');
         var nota = formulario.querySelector('[data-nota-vivo]');
-        var turno = 0;
-
-        if (respaldo) {
-            respaldo.hidden = true;
-        }
-
-        if (nota) {
-            nota.hidden = false;
-        }
 
         function actualizar() {
             var metodo = formulario.querySelector('input[name="metodo_envio"]:checked');
             var envoltorio = formulario.querySelector('input[name="envoltorio"]');
-            var consulta = '?metodo_envio=' + encodeURIComponent(metodo ? metodo.value : '')
-                + '&envoltorio=' + (envoltorio && envoltorio.checked ? '1' : '0');
-            var miTurno = ++turno;
+            var envio = metodo ? metodo.value : '';
+            var conEnvoltorio = envoltorio && envoltorio.checked ? '1' : '0';
+            var elegida = null;
 
-            zona.setAttribute('aria-busy', 'true');
+            variantes.forEach(function (variante) {
+                if (variante.getAttribute('data-envio') === envio
+                    && variante.getAttribute('data-envoltorio') === conEnvoltorio) {
+                    elegida = variante;
+                }
+            });
 
-            window.fetch(url + consulta, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
-                .then(function (respuesta) {
-                    if (!respuesta.ok) {
-                        throw new Error('HTTP ' + respuesta.status);
-                    }
-
-                    return respuesta.text();
-                })
-                .then(function (html) {
-                    // Si el cliente ha vuelto a cambiar algo mientras tanto, solo
-                    // cuenta la respuesta de la última petición.
-                    if (miTurno === turno) {
-                        zona.innerHTML = html;
-                        zona.removeAttribute('aria-busy');
-                    }
-                })
-                .catch(function () {
-                    if (miTurno === turno) {
-                        zona.removeAttribute('aria-busy');
-
-                        if (respaldo) {
-                            respaldo.hidden = false;
-                        }
-
-                        if (nota) {
-                            nota.hidden = true;
-                        }
-                    }
+            // Si no hay ninguna que coincida, se deja la que pintó el servidor.
+            if (elegida) {
+                variantes.forEach(function (variante) {
+                    variante.hidden = variante !== elegida;
                 });
+            }
         }
 
         formulario.querySelectorAll('input[name="metodo_envio"], input[name="envoltorio"]').forEach(function (control) {
             control.addEventListener('change', actualizar);
         });
+
+        // El navegador puede haber restaurado otra selección al volver atrás.
+        actualizar();
+
+        if (nota) {
+            nota.hidden = false;
+        }
     });
 
     /** Factura: el botón abre el cuadro de impresión (permite «Guardar como PDF»). */

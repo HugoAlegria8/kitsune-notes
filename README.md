@@ -204,8 +204,9 @@ Cualquier otro número que supere la validación de Luhn se autoriza.
 3. **Añadir al carrito** → se emite `cart.item_added`.
 4. **Carrito** → aplicar `KITSUNE10` y comprobar el recálculo de descuento, envío e IVA.
 5. **Checkout** → datos de envío, método de envío y envoltorio → se emite `checkout.started`.
-   Al cambiar el método de envío o marcar el envoltorio, el resumen se recalcula al momento
-   (lo calcula el servidor; sin JavaScript hay un botón «Actualizar total»).
+   Al cambiar el método de envío o marcar el envoltorio, el total cambia al momento, sin
+   ningún botón: la página trae ya calculado por el servidor el resumen de cada combinación
+   y enseña el que corresponde (en los navegadores actuales, también sin JavaScript).
 6. **Pago** → primero con `4000 0000 0000 0002` (rechazo) y después con `4242…` (autorización).
    El pedido se crea una sola vez: el segundo intento reutiliza el mismo pedido (salvo que
    entre medias se cambie el carrito o el idioma, y con él la moneda: entonces el pedido sin
@@ -775,8 +776,12 @@ location ~ \.php$ {
   (sección 7).
 * Los precios **nunca** llegan desde el navegador: la sesión guarda únicamente identificadores
   de producto y cantidades, y los importes se recalculan en el servidor en cada petición.
-  También el resumen del checkout: al cambiar el envío o el envoltorio, el navegador pide a
-  `/checkout/resumen` el fragmento ya calculado y no suma nada por su cuenta.
+  También el resumen del checkout: el servidor calcula de antemano el total de cada
+  combinación de envío y envoltorio y el navegador se limita a mostrar la que corresponde a
+  lo marcado; no suma nada por su cuenta.
+* Las hojas de estilo y los scripts se enlazan con una huella de su contenido
+  (`kitsune.css?v=…`): al publicar una versión nueva cambia la dirección y nadie se queda con
+  la copia antigua guardada en su navegador.
 * **Contraste AA** comprobado para todos los pares de color de texto de la paleta «fresa y
   nata» (el rosa de los botones se oscureció hasta `#D6336C` para que el texto blanco llegue a
   4,6:1), foco visible, enlace para saltar al contenido, etiquetas en todos los campos y
