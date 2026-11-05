@@ -1,0 +1,709 @@
+{
+  "id": "kitsune03gestion",
+  "name": "Kitsune · 03 Eventos del back-office",
+  "description": "Aplica en la tienda los cambios hechos en el back-office (escenario 2) y ejecuta por Telegram las propuestas aprobadas por una persona (escenario 3).",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kitsune/gestion",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "8bd2b1be-c278-4a49-9183-e9be6a28c240",
+      "name": "Webhook · cambios del back-office",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "7f1d4974-97a2-4446-b116-da2f235bea95"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Igual que con la tienda: firma HMAC-SHA256 del cuerpo exacto, antigüedad y contrato.\nconst crypto = require('crypto');\nconst entrada = $input.first();\nconst h = entrada.json.headers || {};\nconst errores = [];\nconst exigir = (ok, campo, error) => { if (!ok) errores.push({ campo, error }); };\nlet crudo = entrada.binary && entrada.binary.data\n  ? (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8')\n  : JSON.stringify(entrada.json.body || {});\nconst secreto = $env.KITSUNE_SECRETO_GESTION || '';\nconst marca = String(h['x-kitsune-timestamp'] || '');\nconst recibida = String(h['x-kitsune-firma'] || '').replace(/^sha256=/, '');\nconst esperada = crypto.createHmac('sha256', secreto).update(marca + '.' + crudo).digest('hex');\nconst firmaOk = secreto !== '' && recibida.length === esperada.length && crypto.timingSafeEqual(Buffer.from(recibida), Buffer.from(esperada));\nexigir(firmaOk, 'X-Kitsune-Firma', 'Firma ausente o incorrecta.');\nif (firmaOk) exigir(Math.abs(Date.now() / 1000 - Number(marca)) <= 600, 'X-Kitsune-Timestamp', 'Envío caducado.');\nlet c = null;\ntry { c = JSON.parse(crudo); } catch (e) { errores.push({ campo: 'cuerpo', error: 'No es JSON.' }); }\nconst d = (c && c.datos) || {};\nconst REF = /^KN-\\d{4}-\\d{6}$/;\nconst ESTADOS = ['creado', 'pagado_simulado', 'pendiente_preparacion', 'enviado', 'entregado', 'incidencia', 'cancelado'];\nlet ruta = null;\nif (c) {\n  exigir(Number.isInteger(c.sincronizacion_id), 'sincronizacion_id', 'Obligatorio.');\n  if (c.tipo === 'pedido.estado_cambiado') {\n    ruta = 'estado';\n    exigir(REF.test(d.pedido_referencia || ''), 'datos.pedido_referencia', 'Formato KN-AAAA-NNNNNN.');\n    exigir(ESTADOS.includes(d.estado_nuevo), 'datos.estado_nuevo', 'Estado no válido.');\n    if (d.estado_nuevo === 'enviado') exigir(String(d.seguimiento || '').trim() !== '', 'datos.seguimiento', 'Obligatorio para «enviado».');\n  } else if (c.tipo === 'propuesta.aprobada') {\n    ruta = 'propuesta';\n    exigir(Number.isInteger(d.propuesta_id), 'datos.propuesta_id', 'Obligatorio.');\n    exigir(String(d.mensaje || '').trim() !== '' && String(d.mensaje).length <= 1000, 'datos.mensaje', 'Mensaje vacío o demasiado largo.');\n    exigir(!d.telegram_chat_id || /^-?\\d{1,20}$/.test(String(d.telegram_chat_id)), 'datos.telegram_chat_id', 'Chat no válido.');\n    exigir(!!d.aprobada_por, 'datos.aprobada_por', 'Falta quién la aprobó: sin aprobación humana no se envía nada.');\n  } else {\n    errores.push({ campo: 'tipo', error: 'Tipo de cambio desconocido.' });\n  }\n}\nreturn [{ json: { valido: errores.length === 0, errores, codigo_rechazo: firmaOk ? 422 : 401, ruta, tipo: c && c.tipo,\n  sincronizacion_id: c && c.sincronizacion_id, entidad: c && c.entidad, datos: d } }];\n"
+      },
+      "id": "45c07bd2-e744-4239-b8aa-99d5a03cf966",
+      "name": "Verificar firma (back-office)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "55e7002e-d41d-4681-8255-9a297ce9dc31",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "73fc8622-583e-4893-893f-407c181e86e2",
+      "name": "¿Firma y datos correctos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '03 · Eventos del back-office', ejecucion: String($execution.id) }, { operacion: $('Verificar firma (back-office)').first().json.tipo || 'desconocido', event_id: 'gestion-' + $('Verificar firma (back-office)').first().json.sincronizacion_id, entidad: $('Verificar firma (back-office)').first().json.entidad, resultado: 'error', tipo_error: $('Verificar firma (back-office)').first().json.codigo_rechazo === 401 ? 'firma' : 'validacion', mensaje: JSON.stringify($('Verificar firma (back-office)').first().json.errores).slice(0, 1900) })) }}"
+      },
+      "id": "e1381131-6505-4bd9-8bd6-3e9098054e5c",
+      "name": "Anotar el rechazo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        600
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: 'rechazado', errores: $('Verificar firma (back-office)').first().json.errores, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": "={{ $('Verificar firma (back-office)').first().json.codigo_rechazo }}"
+        }
+      },
+      "id": "b4bed54e-02ee-4631-a02e-cd978457dc13",
+      "name": "Responder: rechazado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "3182e412-1d4a-418b-95d2-6e41be936313",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "estado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Cambio de estado del pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "8724d260-b146-41a1-b825-724d814f9fca",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "propuesta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Propuesta aprobada"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c9d32ce7-17da-4899-a85f-0e25a5fc8fb8",
+      "name": "¿Qué cambio es?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_TIENDA }}/api/pedidos/{{ $json.datos.pedido_referencia }}/estado",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Token",
+              "value": "={{ $env.KITSUNE_TOKEN_TIENDA }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ estado: $json.datos.estado_nuevo, nota: $json.datos.nota || '', transportista: $json.datos.transportista || '', seguimiento: $json.datos.seguimiento || '', operador: $json.datos.operador || '' }) }}"
+      },
+      "id": "e092ed59-766b-4a0f-af43-d48f0e636aa0",
+      "name": "Aplicar el estado en la tienda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 200 → aplicado (o ya estaba: idempotente) · 404/409/422 → conflicto, una persona debe revisarlo\n// red o 5xx → la tienda no está disponible: 502 y el back-office lo deja pendiente y reintenta.\nconst caso = $('Verificar firma (back-office)').first().json;\nconst r = $json || {};\nconst d = caso.datos;\nlet resultado = 'ok', codigo = 200, tipo_error = null, mensaje = '', cuerpo = {};\nif (r.statusCode === undefined) {\n  resultado = 'error'; codigo = 502; tipo_error = 'tienda_no_disponible'; mensaje = typeof r.error === 'string' ? r.error : JSON.stringify(r.error || r).slice(0, 300);\n} else {\n  const s = Number(r.statusCode);\n  cuerpo = typeof r.body === 'string' ? (() => { try { return JSON.parse(r.body); } catch (e) { return { mensaje: r.body }; } })() : (r.body || {});\n  if (s >= 200 && s < 300) { resultado = cuerpo.resultado === 'sin_cambios' ? 'duplicado' : 'ok'; mensaje = 'Tienda: ' + (cuerpo.resultado || 'ok') + ' (' + (cuerpo.estado || d.estado_nuevo) + ')'; }\n  else if ([404, 409, 422].includes(s)) { resultado = 'error'; codigo = 409; tipo_error = 'conflicto_tienda'; mensaje = String(cuerpo.mensaje || ('HTTP ' + s)); }\n  else { resultado = 'error'; codigo = 502; tipo_error = 'tienda_http_' + s; mensaje = String(cuerpo.mensaje || ('HTTP ' + s)); }\n}\n// Aviso al cliente por Telegram (mensaje fijo, no lo escribe la IA) solo si lo tiene vinculado.\nconst en = d.idioma === 'en';\nconst TEXTOS = {\n  pendiente_preparacion: en ? 'we are preparing your order' : 'estamos preparando tu pedido',\n  enviado: (en ? 'your order is on its way' : 'tu pedido ya está en camino') + (d.seguimiento ? ` (${d.transportista || ''} ${d.seguimiento})`.replace('( ', '(') : ''),\n  entregado: en ? 'your order has been delivered' : 'tu pedido figura como entregado',\n  cancelado: en ? 'your order has been cancelled' : 'tu pedido se ha cancelado',\n};\nconst aviso = resultado === 'ok' && d.telegram_chat_id && TEXTOS[d.estado_nuevo]\n  ? (en ? `Kitsune Notes · order ${d.pedido_referencia}: ${TEXTOS[d.estado_nuevo]}.` : `Kitsune Notes · pedido ${d.pedido_referencia}: ${TEXTOS[d.estado_nuevo]}.`)\n  : null;\nreturn [{ json: { ...caso, resultado, codigo, tipo_error, mensaje, aviso } }];\n"
+      },
+      "id": "e886ce8b-386c-4547-a30b-07e88286d1cd",
+      "name": "Evaluar la respuesta de la tienda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "deed8dba-4acf-44ed-befb-324e923b8547",
+              "leftValue": "={{ !!$json.aviso }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "af01d43b-361f-4a34-b913-65a1408ecda5",
+      "name": "¿Avisar al cliente por Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.datos.telegram_chat_id, text: $json.aviso, disable_web_page_preview: true }) }}"
+      },
+      "id": "21f1849e-73da-4f5a-874c-4668b0159efc",
+      "name": "Telegram · avisar del cambio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1700,
+        20
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '03 · Eventos del back-office', ejecucion: String($execution.id) }, { operacion: 'pedido.estado_cambiado', event_id: 'gestion-' + $('Evaluar la respuesta de la tienda').first().json.sincronizacion_id, entidad: $('Evaluar la respuesta de la tienda').first().json.entidad, resultado: $('Evaluar la respuesta de la tienda').first().json.resultado, tipo_error: $('Evaluar la respuesta de la tienda').first().json.tipo_error, mensaje: $('Evaluar la respuesta de la tienda').first().json.mensaje })) }}"
+      },
+      "id": "0d6b3e84-3d26-43f4-a786-6a0e397ea41e",
+      "name": "Anotar la sincronización",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2180,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: $('Evaluar la respuesta de la tienda').first().json.resultado === 'error' ? 'no_aplicado' : 'confirmada', resultado: $('Evaluar la respuesta de la tienda').first().json.resultado, mensaje: $('Evaluar la respuesta de la tienda').first().json.mensaje, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": "={{ $('Evaluar la respuesta de la tienda').first().json.codigo }}"
+        }
+      },
+      "id": "89325a01-282c-4e3c-b3cd-1035bcb3acd1",
+      "name": "Responder al back-office (estado)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1940,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "880a3880-ce1c-49c7-bfb5-e7e20fe3eee8",
+              "leftValue": "={{ !!$json.datos.telegram_chat_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1ea9d150-e69e-4f82-99ac-1c7e36eca038",
+      "name": "¿El cliente tiene Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.datos.telegram_chat_id, text: $json.datos.mensaje + '\\n\\n(Respuesta revisada por una persona del equipo · Kitsune Notes, prototipo académico)', disable_web_page_preview: true }) }}"
+      },
+      "id": "6ab0d564-f407-479f-9fd2-89adb1d87b6d",
+      "name": "Telegram · enviar la respuesta aprobada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        340
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Solo llega aquí lo que una persona ha aprobado en el back-office.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resultado de ejecutar la propuesta aprobada:\n//   con Telegram vinculado → enviada (o error: 409 si Telegram la rechaza, 502 si no responde)\n//   sin Telegram → «ejecutada en modo simulado»: queda registrada pero no se envía a nadie.\nconst caso = $('Verificar firma (back-office)').first().json;\nconst d = caso.datos;\nif (!d.telegram_chat_id) {\n  return [{ json: { ...caso, resultado: 'ok', codigo: 200, estado: 'ejecutada_simulada',\n    detalle: 'El cliente no tiene Telegram vinculado: el mensaje queda registrado en modo simulado, sin enviarse.' } }];\n}\nconst r = $json || {};\nconst s = Number(r.statusCode || 0);\nconst cuerpo = (r.body && typeof r.body === 'object') ? r.body : {};\nif (s === 200 && cuerpo.ok) {\n  return [{ json: { ...caso, resultado: 'ok', codigo: 200, estado: 'ejecutada', telegram_message_id: cuerpo.result && cuerpo.result.message_id,\n    detalle: 'Mensaje enviado por Telegram (mensaje ' + (cuerpo.result && cuerpo.result.message_id) + ').' } }];\n}\nif (s >= 400 && s < 500) {\n  return [{ json: { ...caso, resultado: 'error', codigo: 409, estado: 'fallo_ejecucion', tipo_error: 'telegram_rechazo',\n    detalle: 'Telegram no acepta el mensaje: ' + (cuerpo.description || ('HTTP ' + s)) } }];\n}\nreturn [{ json: { ...caso, resultado: 'error', codigo: 502, estado: 'pendiente', tipo_error: 'telegram_no_disponible',\n  detalle: 'Telegram no responde; el back-office lo reintentará.' } }];\n"
+      },
+      "id": "67920142-7347-4fef-9d97-96b80278dec4",
+      "name": "Evaluar el envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '03 · Eventos del back-office', ejecucion: String($execution.id) }, { operacion: 'propuesta.aprobada', event_id: 'gestion-' + $('Evaluar el envío').first().json.sincronizacion_id, entidad: $('Evaluar el envío').first().json.entidad, resultado: $('Evaluar el envío').first().json.resultado, tipo_error: $('Evaluar el envío').first().json.tipo_error || null, mensaje: $('Evaluar el envío').first().json.detalle })) }}"
+      },
+      "id": "d5ec044a-af29-4749-a2ac-137e14e2d344",
+      "name": "Anotar la ejecución",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        420
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: $('Evaluar el envío').first().json.estado, detalle: $('Evaluar el envío').first().json.detalle, telegram_message_id: $('Evaluar el envío').first().json.telegram_message_id || null, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": "={{ $('Evaluar el envío').first().json.codigo }}"
+        }
+      },
+      "id": "47aa4ee3-4f41-466f-8dc5-20d439f1e131",
+      "name": "Responder al back-office (propuesta)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1700,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook · cambios del back-office": {
+      "main": [
+        [
+          {
+            "node": "Verificar firma (back-office)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar firma (back-office)": {
+      "main": [
+        [
+          {
+            "node": "¿Firma y datos correctos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma y datos correctos?": {
+      "main": [
+        [
+          {
+            "node": "¿Qué cambio es?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: rechazado": {
+      "main": [
+        [
+          {
+            "node": "Anotar el rechazo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Qué cambio es?": {
+      "main": [
+        [
+          {
+            "node": "Aplicar el estado en la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿El cliente tiene Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar el estado en la tienda": {
+      "main": [
+        [
+          {
+            "node": "Evaluar la respuesta de la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta de la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar la respuesta de la tienda": {
+      "main": [
+        [
+          {
+            "node": "¿Avisar al cliente por Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar al cliente por Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Telegram · avisar del cambio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al back-office (estado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram · avisar del cambio": {
+      "main": [
+        [
+          {
+            "node": "Responder al back-office (estado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder al back-office (estado)": {
+      "main": [
+        [
+          {
+            "node": "Anotar la sincronización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿El cliente tiene Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Telegram · enviar la respuesta aprobada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar el envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram · enviar la respuesta aprobada": {
+      "main": [
+        [
+          {
+            "node": "Evaluar el envío",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar el envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar el envío": {
+      "main": [
+        [
+          {
+            "node": "Responder al back-office (propuesta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder al back-office (propuesta)": {
+      "main": [
+        [
+          {
+            "node": "Anotar la ejecución",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "kitsune00errores"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

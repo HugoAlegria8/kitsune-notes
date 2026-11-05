@@ -1,0 +1,55 @@
+{
+  "contrato": "kitsune.evento/1",
+  "event_id": "6c003b71-35b2-48cf-b2f2-eaebcbdbe558",
+  "event_name": "order.created",
+  "schema_version": "1.1",
+  "source": "kitsune-notes.web",
+  "occurred_at": "2026-11-04T19:06:52+01:00",
+  "session_id": "6qre9bij2kgr152amooqikt0lg",
+  "actor_type": "invitado",
+  "customer_id": 1,
+  "product_id": null,
+  "order_id": 4,
+  "data": {
+    "referencia": "KN-2026-000004",
+    "estado": "creado",
+    "lineas": [
+      {
+        "sku": "KN-CUA-001",
+        "nombre": "Cuaderno Neko Nyan A5 punteado",
+        "cantidad": 2,
+        "precio_cents": 1290,
+        "precio_eur_cents": 1290
+      },
+      {
+        "sku": "KN-CUA-003",
+        "nombre": "Diario Kitsune Kawaii B6",
+        "cantidad": 1,
+        "precio_cents": 1490,
+        "precio_eur_cents": 1490
+      }
+    ],
+    "unidades": 3,
+    "importe_articulos": 4070,
+    "descuento_cents": 0,
+    "envio_cents": 0,
+    "envoltorio_cents": 0,
+    "base_imponible": 3364,
+    "iva_cents": 706,
+    "total_cents": 4070,
+    "moneda": "EUR",
+    "idioma": "es",
+    "tipo_cambio": "1.00",
+    "total_eur_cents": 4070,
+    "cupon": null,
+    "metodo_envio": "estandar",
+    "provincia_envio": "Murcia"
+  },
+  "contexto": {
+    "cliente": {
+      "id": 1,
+      "nombre": "Ana Demo Ruiz",
+      "email": "ana.demo@kitsunenotes.test"
+    }
+  }
+}

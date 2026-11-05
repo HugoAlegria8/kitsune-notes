@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kitsunenotes.test/esquemas/kitsune-evento-1.schema.json",
+  "title": "Evento de la tienda Kitsune Notes para la integración (kitsune.evento/1)",
+  "description": "Cuerpo del POST que la tienda envía a n8n. Va firmado: X-Kitsune-Firma = sha256=HMAC_SHA256(secreto, X-Kitsune-Timestamp + '.' + cuerpo).",
+  "type": "object",
+  "required": [
+    "contrato",
+    "event_id",
+    "event_name",
+    "schema_version",
+    "source",
+    "occurred_at",
+    "data"
+  ],
+  "properties": {
+    "contrato": {
+      "const": "kitsune.evento/1"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador único: clave de idempotencia"
+    },
+    "event_name": {
+      "enum": [
+        "cart.item_added",
+        "checkout.started",
+        "order.created",
+        "payment.simulated",
+        "support.requested",
+        "incident.created",
+        "order.status_changed"
+      ]
+    },
+    "schema_version": {
+      "type": "string",
+      "examples": [
+        "1.1"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^kitsune-notes"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "actor_type": {
+      "enum": [
+        "invitado",
+        "personal",
+        "sistema"
+      ]
+    },
+    "customer_id": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "product_id": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "order_id": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Carga útil del evento (la misma de la Tarea 1)"
+    },
+    "contexto": {
+      "description": "Datos para el back-office que el evento no guarda por privacidad",
+      "oneOf": [
+        {
+          "type": "array",
+          "maxItems": 0
+        },
+        {
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "order.created"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "referencia",
+              "estado",
+              "lineas",
+              "total_cents",
+              "moneda"
+            ],
+            "properties": {
+              "referencia": {
+                "type": "string",
+                "pattern": "^KN-\\d{4}-\\d{6}$"
+              },
+              "estado": {
+                "type": "string"
+              },
+              "lineas": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "sku",
+                    "nombre",
+                    "cantidad",
+                    "precio_cents"
+                  ],
+                  "properties": {
+                    "sku": {
+                      "type": "string"
+                    },
+                    "nombre": {
+                      "type": "string"
+                    },
+                    "cantidad": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "precio_cents": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "precio_eur_cents": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "unidades": {
+                "type": "integer"
+              },
+              "total_cents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total_eur_cents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "moneda": {
+                "enum": [
+                  "EUR",
+                  "GBP"
+                ]
+              },
+              "idioma": {
+                "enum": [
+                  "es",
+                  "en"
+                ]
+              },
+              "metodo_envio": {
+                "type": "string"
+              },
+              "cupon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "contexto": {
+            "type": "object",
+            "required": [
+              "cliente"
+            ],
+            "properties": {
+              "cliente": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "nombre",
+                  "email"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "payment.simulated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "referencia_pedido",
+              "resultado",
+              "importe_cents"
+            ],
+            "properties": {
+              "referencia_pedido": {
+                "type": "string",
+                "pattern": "^KN-\\d{4}-\\d{6}$"
+              },
+              "resultado": {
+                "enum": [
+                  "autorizado",
+                  "rechazado"
+                ]
+              },
+              "importe_cents": {
+                "type": "integer"
+              },
+              "moneda": {
+                "enum": [
+                  "EUR",
+                  "GBP"
+                ]
+              },
+              "motivo_rechazo": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "incident.created",
+              "support.requested"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "referencia_ticket",
+              "tipo",
+              "asunto"
+            ],
+            "properties": {
+              "referencia_pedido": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^KN-\\d{4}-\\d{6}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "contexto": {
+            "type": "object",
+            "required": [
+              "ticket"
+            ],
+            "properties": {
+              "ticket": {
+                "type": "object",
+                "required": [
+                  "mensaje",
+                  "email"
+                ],
+                "properties": {
+                  "mensaje": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "nombre": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "order.status_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "referencia",
+              "estado_nuevo",
+              "origen"
+            ],
+            "properties": {
+              "referencia": {
+                "type": "string",
+                "pattern": "^KN-\\d{4}-\\d{6}$"
+              },
+              "estado_nuevo": {
+                "type": "string"
+              },
+              "origen": {
+                "type": "string",
+                "description": "«integracion» = eco de un cambio hecho por n8n: se ignora"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

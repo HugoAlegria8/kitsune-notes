@@ -79,6 +79,9 @@ final class EventRecorder
 
     private string $userAgent = '';
 
+    /** Tarea 2: se avisa a la integración de cada evento registrado. */
+    private ?\Closure $listener = null;
+
     /** @param array<string, mixed> $config */
     public function __construct(
         private readonly EventRepository $repository,
@@ -96,6 +99,17 @@ final class EventRecorder
     public function mute(bool $muted = true): void
     {
         $this->muted = $muted;
+    }
+
+    /**
+     * Tarea 2: función a la que se pasa cada evento registrado (la bandeja de
+     * salida hacia n8n). Si falla, se anota y la compra sigue.
+     *
+     * @param callable(array<string, mixed>, array<string, mixed>): void $listener
+     */
+    public function onRecorded(callable $listener): void
+    {
+        $this->listener = \Closure::fromCallable($listener);
     }
 
     /** Contexto de la petición: se seudonimiza la IP, nunca se guarda en claro. */
@@ -145,6 +159,14 @@ final class EventRecorder
         }
 
         $this->appendToLog($envelope, $payload);
+
+        if ($this->listener !== null) {
+            try {
+                ($this->listener)($envelope, $payload);
+            } catch (Throwable $e) {
+                $this->logFailure('integracion', $name, $e);
+            }
+        }
 
         return $envelope;
     }

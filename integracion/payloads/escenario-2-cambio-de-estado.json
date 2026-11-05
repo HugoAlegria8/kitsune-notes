@@ -1,0 +1,18 @@
+{
+  "tipo": "pedido.estado_cambiado",
+  "sincronizacion_id": 2,
+  "entidad": "KN-2026-000005",
+  "emitido_en": "2026-11-04T19:05:30+01:00",
+  "intento": 1,
+  "datos": {
+    "pedido_referencia": "KN-2026-000005",
+    "estado_anterior": "incidencia",
+    "estado_nuevo": "enviado",
+    "nota": "",
+    "transportista": "Correos Express (simulado)",
+    "seguimiento": "KN-SEG-0001",
+    "operador": "gestion@kitsunenotes.test",
+    "idioma": "es",
+    "telegram_chat_id": null
+  }
+}

@@ -83,6 +83,8 @@ $router->post('/admin/productos/{id}/retirar',       [AdminProductController::cl
 $router->post('/admin/productos/{id}/reactivar',     [AdminProductController::class, 'restore']);
 $router->post('/admin/productos/{id}/eliminar',      [AdminProductController::class, 'destroy']);
 $router->get('/admin/eventos',                  [AdminController::class, 'events']);
+$router->get('/admin/integracion',              [AdminController::class, 'integration']);
+$router->post('/admin/integracion/reintentar',  [AdminController::class, 'retryIntegration']);
 $router->get('/admin/incidencias',              [AdminController::class, 'tickets']);
 $router->post('/admin/incidencias/{reference}/estado', [AdminController::class, 'updateTicket']);
 
@@ -90,5 +92,7 @@ $router->post('/admin/incidencias/{reference}/estado', [AdminController::class, 
 $router->get('/api/eventos',         [ApiController::class, 'events']);
 $router->get('/api/productos',       [ApiController::class, 'products']);
 $router->get('/api/salud',           [ApiController::class, 'health']);
+// Tarea 2: n8n aplica en la tienda los cambios de estado hechos en el back-office.
+$router->post('/api/pedidos/{reference}/estado', [ApiController::class, 'changeOrderStatus']);
 
 return $router;

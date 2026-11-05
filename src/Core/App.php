@@ -22,6 +22,7 @@ use KitsuneNotes\Service\CatalogAdminService;
 use KitsuneNotes\Service\CatalogLocalizer;
 use KitsuneNotes\Service\CurrencyService;
 use KitsuneNotes\Service\EventRecorder;
+use KitsuneNotes\Service\WebhookPublisher;
 use KitsuneNotes\Service\InvoiceService;
 use KitsuneNotes\Service\Mailer;
 use KitsuneNotes\Service\Notifier;
@@ -314,11 +315,33 @@ final class App
 
     public function events(): EventRecorder
     {
-        return $this->instances[EventRecorder::class] ??= new EventRecorder(
-            $this->eventsRepository(),
-            $this->session(),
-            (array) $this->config('events'),
-            (string) $this->config('security.event_salt')
+        if (!isset($this->instances[EventRecorder::class])) {
+            $recorder = new EventRecorder(
+                $this->eventsRepository(),
+                $this->session(),
+                (array) $this->config('events'),
+                (string) $this->config('security.event_salt')
+            );
+
+            // Tarea 2: los eventos suscritos pasan a la bandeja de salida hacia n8n.
+            if ($this->webhooks()->enabled()) {
+                $recorder->onRecorded(fn (array $envelope, array $payload) => $this->webhooks()->enqueue($envelope, $payload));
+            }
+
+            $this->instances[EventRecorder::class] = $recorder;
+        }
+
+        return $this->instances[EventRecorder::class];
+    }
+
+    /** Tarea 2: publicación de eventos hacia n8n (bandeja de salida con reintentos). */
+    public function webhooks(): WebhookPublisher
+    {
+        return $this->instances[WebhookPublisher::class] ??= new WebhookPublisher(
+            $this->pdo(),
+            (array) $this->config('integration'),
+            $this->customers(),
+            $this->support()
         );
     }
 

@@ -101,6 +101,22 @@ try {
 
 $response->send();
 
+// Tarea 2: los eventos pendientes se envían a n8n después de responder, para
+// que la compra no espere a la integración (si n8n no contesta, se reintenta).
+try {
+    if ($app->webhooks()->enabled()) {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        } elseif (function_exists('litespeed_finish_request')) {
+            litespeed_finish_request();
+        }
+
+        $app->webhooks()->dispatchDue(5, 6.0);
+    }
+} catch (Throwable $e) {
+    error_log('[kitsune-notes] Envío de eventos a n8n: ' . $e->getMessage());
+}
+
 // Ayuda para quien amplíe la tienda: en modo depuración se anotan en el registro
 // de errores los textos que se han mostrado sin traducir (han salido en español).
 if ($app->config('app.debug')) {

@@ -79,8 +79,45 @@ final class SchemaUpgrade
         ],
     ];
 
+    /**
+     * Tablas añadidas después de la primera versión: tabla => [sentencias SQLite, sentencias MySQL].
+     * Solo se crean en una base ya instalada; en una instalación nueva las crea el esquema.
+     *
+     * @var array<string, array{0:list<string>, 1:list<string>}>
+     */
+    private const ADDED_TABLES = [
+        // Tarea 2: bandeja de salida de los eventos hacia n8n.
+        'integration_outbox' => [
+            [
+                "CREATE TABLE IF NOT EXISTS integration_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE, "
+                . "event_name TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pendiente', attempts INTEGER NOT NULL DEFAULT 0, "
+                . 'next_attempt_at TEXT NOT NULL, last_status_code INTEGER, last_error TEXT, response_body TEXT, created_at TEXT NOT NULL, delivered_at TEXT)',
+                'CREATE INDEX IF NOT EXISTS idx_integration_outbox_status ON integration_outbox(status, next_attempt_at)',
+            ],
+            [
+                'CREATE TABLE IF NOT EXISTS integration_outbox (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, event_id VARCHAR(40) NOT NULL UNIQUE, '
+                . "event_name VARCHAR(60) NOT NULL, payload_json MEDIUMTEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pendiente', "
+                . 'attempts INT NOT NULL DEFAULT 0, next_attempt_at VARCHAR(40) NOT NULL, last_status_code INT NULL, last_error VARCHAR(500) NULL, '
+                . 'response_body TEXT NULL, created_at VARCHAR(40) NOT NULL, delivered_at VARCHAR(40) NULL, '
+                . 'INDEX idx_integration_outbox_status (status, next_attempt_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
+            ],
+        ],
+    ];
+
     public static function apply(PDO $pdo, string $driver): void
     {
+        foreach (self::ADDED_TABLES as $table => [$sqlite, $mysql]) {
+            try {
+                if (self::columnsOf($pdo, $driver, 'orders') !== [] && self::columnsOf($pdo, $driver, $table) === []) {
+                    foreach ($driver === 'mysql' ? $mysql : $sqlite as $statement) {
+                        $pdo->exec($statement);
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('[kitsune-notes] No se pudo crear la tabla ' . $table . ': ' . $e->getMessage());
+            }
+        }
+
         /** @var list<string> $added columnas creadas en esta petición, como «tabla.columna» */
         $added = [];
 

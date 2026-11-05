@@ -192,4 +192,21 @@ return [
         'log_path'       => Env::get('KN_EVENT_LOG_PATH', dirname(__DIR__) . '/storage/events'),
         'log_enabled'    => Env::get('KN_EVENT_LOG_ENABLED', '1') === '1',
     ],
+
+    // Tarea 2 · integración con el back-office «Kitsune Gestión» a través de n8n.
+    // Sin dirección o sin secreto, la integración está apagada y la tienda funciona igual.
+    'integration' => [
+        'webhook_url'     => trim((string) Env::get('KN_WEBHOOK_URL', '')),
+        // Secreto compartido con n8n para firmar cada envío (HMAC-SHA256).
+        'webhook_secret'  => (string) Env::get('KN_WEBHOOK_SECRET', ''),
+        // Eventos que se envían a n8n (product.viewed no: es muy frecuente y no lo necesita el back-office).
+        'webhook_events'  => array_values(array_filter(array_map('trim', explode(',', (string) Env::get(
+            'KN_WEBHOOK_EVENTS',
+            'cart.item_added,checkout.started,order.created,payment.simulated,support.requested,incident.created,order.status_changed'
+        ))))),
+        'webhook_timeout' => (int) Env::get('KN_WEBHOOK_TIMEOUT', '8'),
+        // Bot de Telegram (sin @) y secreto del enlace que vincula un pedido con el chat del cliente.
+        'telegram_bot'    => ltrim(trim((string) Env::get('KN_TELEGRAM_BOT', '')), '@'),
+        'telegram_secret' => (string) Env::get('KN_TELEGRAM_LINK_SECRET', ''),
+    ],
 ];
