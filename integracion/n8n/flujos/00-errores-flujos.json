@@ -1,0 +1,148 @@
+{
+  "id": "kitsune00errores",
+  "name": "Kitsune · 00 Errores de los flujos",
+  "description": "Flujo de error común: anota en el back-office cualquier ejecución fallida y avisa al equipo por Telegram.",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c53132fd-3942-454f-bfcb-214b8e3cb096",
+      "name": "Error en un flujo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $json || {};\nconst ej = e.execution || {};\nreturn [{ json: {\n  flujo: (e.workflow && e.workflow.name) || 'desconocido',\n  nodo: ej.lastNodeExecuted || '',\n  ejecucion: String(ej.id || ''),\n  url: ej.url || '',\n  mensaje: String((ej.error && ej.error.message) || 'Error sin mensaje').slice(0, 400),\n} }];\n"
+      },
+      "id": "32cc7068-22dc-4501-9530-8d58f25e89d1",
+      "name": "Preparar el aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '00 · Errores de los flujos', ejecucion: String($execution.id) }, { operacion: 'fallo en ' + $json.flujo, entidad: $json.nodo, resultado: 'error', tipo_error: 'fallo_flujo', mensaje: $json.mensaje + (($json.url) ? ' · ' + $json.url : '') })) }}"
+      },
+      "id": "3800b00e-074a-45d3-a01e-75481497c6fa",
+      "name": "Anotar el fallo en el back-office",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.KITSUNE_TELEGRAM_CHAT_EQUIPO, text: 'Kitsune · ha fallado el flujo «' + $('Preparar el aviso').first().json.flujo + '» en el nodo «' + $('Preparar el aviso').first().json.nodo + '»\\n' + $('Preparar el aviso').first().json.mensaje, disable_web_page_preview: true }) }}"
+      },
+      "id": "7d3a3d5a-608d-40d7-8503-a560589cfdb9",
+      "name": "Avisar al equipo por Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Error en un flujo": {
+      "main": [
+        [
+          {
+            "node": "Preparar el aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar el aviso": {
+      "main": [
+        [
+          {
+            "node": "Anotar el fallo en el back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar el fallo en el back-office": {
+      "main": [
+        [
+          {
+            "node": "Avisar al equipo por Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

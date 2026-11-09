@@ -343,3 +343,25 @@ CREATE INDEX idx_events_occurred   ON events(occurred_at);
 CREATE INDEX idx_events_session    ON events(session_id);
 CREATE INDEX idx_events_order      ON events(order_id);
 CREATE INDEX idx_events_product    ON events(product_id);
+
+-- ---------------------------------------------------------------------
+-- Tarea 2 · bandeja de salida de la integración (patrón «transactional outbox»).
+-- Cada evento al que está suscrita la integración se guarda aquí y se envía a n8n
+-- firmado; si n8n no responde, queda pendiente y se reintenta.
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS integration_outbox (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id         TEXT    NOT NULL UNIQUE,
+    event_name       TEXT    NOT NULL,
+    payload_json     TEXT    NOT NULL,
+    status           TEXT    NOT NULL DEFAULT 'pendiente', -- pendiente | entregado | rechazado | fallido
+    attempts         INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at  TEXT    NOT NULL,                      -- UTC, para comparar sin líos de horario de verano
+    last_status_code INTEGER,
+    last_error       TEXT,
+    response_body    TEXT,
+    created_at       TEXT    NOT NULL,
+    delivered_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_integration_outbox_status ON integration_outbox(status, next_attempt_at);

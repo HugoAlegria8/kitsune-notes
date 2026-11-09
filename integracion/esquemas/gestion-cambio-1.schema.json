@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kitsunenotes.test/esquemas/gestion-cambio-1.schema.json",
+  "title": "Cambio del back-office Kitsune Gestión para n8n",
+  "description": "Cuerpo del POST que el back-office envía a n8n, firmado igual que los eventos de la tienda (KG_N8N_SECRETO).",
+  "type": "object",
+  "required": [
+    "tipo",
+    "sincronizacion_id",
+    "entidad",
+    "emitido_en",
+    "datos"
+  ],
+  "properties": {
+    "tipo": {
+      "enum": [
+        "pedido.estado_cambiado",
+        "propuesta.aprobada"
+      ]
+    },
+    "sincronizacion_id": {
+      "type": "integer",
+      "description": "Fila de la bandeja de salida del back-office"
+    },
+    "entidad": {
+      "type": "string"
+    },
+    "emitido_en": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "intento": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "datos": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "tipo": {
+            "const": "pedido.estado_cambiado"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "datos": {
+            "type": "object",
+            "required": [
+              "pedido_referencia",
+              "estado_anterior",
+              "estado_nuevo",
+              "operador"
+            ],
+            "properties": {
+              "pedido_referencia": {
+                "type": "string",
+                "pattern": "^KN-\\d{4}-\\d{6}$"
+              },
+              "estado_nuevo": {
+                "enum": [
+                  "creado",
+                  "pagado_simulado",
+                  "pendiente_preparacion",
+                  "enviado",
+                  "entregado",
+                  "incidencia",
+                  "cancelado"
+                ]
+              },
+              "transportista": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "seguimiento": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Obligatorio si el estado es «enviado»"
+              },
+              "telegram_chat_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "idioma": {
+                "enum": [
+                  "es",
+                  "en"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "tipo": {
+            "const": "propuesta.aprobada"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "datos": {
+            "type": "object",
+            "required": [
+              "propuesta_id",
+              "incidencia_id",
+              "mensaje",
+              "aprobada_por"
+            ],
+            "properties": {
+              "propuesta_id": {
+                "type": "integer"
+              },
+              "mensaje": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "aprobada_por": {
+                "type": "string",
+                "description": "Persona que la aprobó: sin aprobación humana no se envía nada"
+              },
+              "telegram_chat_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "x-respuestas": {
+    "200": "Aplicado o ejecutado (estado: confirmada, ejecutada o ejecutada_simulada)",
+    "401": "Firma incorrecta",
+    "409": "Rechazado por la tienda o por Telegram: queda en conflicto",
+    "422": "Datos no válidos",
+    "502": "La tienda o Telegram no responden: el back-office reintenta"
+  }
+}

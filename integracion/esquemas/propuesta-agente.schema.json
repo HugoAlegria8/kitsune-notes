@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kitsunenotes.test/esquemas/propuesta-agente.schema.json",
+  "title": "Salida estructurada del agente de incidencias",
+  "description": "Formato que el agente debe devolver (nodo «Formato de la propuesta» del flujo 02). n8n la valida y la guarda en el back-office como propuesta pendiente de revisión humana.",
+  "type": "object",
+  "required": [
+    "tipo_caso",
+    "datos_consultados",
+    "accion_propuesta",
+    "mensaje_cliente",
+    "justificacion",
+    "confianza",
+    "prioridad",
+    "riesgos",
+    "estado_final"
+  ],
+  "properties": {
+    "tipo_caso": {
+      "type": "string",
+      "description": "Tipo de caso detectado"
+    },
+    "datos_consultados": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "accion_propuesta": {
+      "enum": [
+        "responder_cliente",
+        "solicitar_informacion",
+        "proponer_reposicion",
+        "escalar_equipo",
+        "cerrar_sin_accion"
+      ]
+    },
+    "mensaje_cliente": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "justificacion": {
+      "type": "string"
+    },
+    "confianza": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "prioridad": {
+      "enum": [
+        "alta",
+        "media",
+        "baja"
+      ]
+    },
+    "riesgos": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "estado_final": {
+      "const": "pendiente_revision",
+      "description": "El agente nunca aprueba ni ejecuta: lo decide una persona"
+    }
+  }
+}

@@ -360,6 +360,63 @@ final class AdminController extends Controller
         ], 'layout/admin');
     }
 
+    /**
+     * Tarea 2: bandeja de salida de eventos hacia n8n (trazabilidad del lado de la tienda).
+     *
+     * @param array<string, string> $args
+     */
+    public function integration(Request $request, array $args = []): Response
+    {
+        if (($guard = $this->guardStaff()) !== null) {
+            return $guard;
+        }
+
+        $webhooks = $this->app->webhooks();
+
+        return $this->view('admin/integracion', [
+            'title'       => 'Integración con n8n',
+            'enabled'     => $webhooks->enabled(),
+            'subscribed'  => (array) $this->app->config('integration.webhook_events'),
+            'counts'      => $webhooks->countByStatus(),
+            'rows'        => $webhooks->recent(80),
+            'telegramBot' => (string) $this->app->config('integration.telegram_bot'),
+        ], 'layout/admin');
+    }
+
+    /** @param array<string, string> $args */
+    public function retryIntegration(Request $request, array $args = []): Response
+    {
+        if (($guard = $this->guardStaff()) !== null) {
+            return $guard;
+        }
+
+        if (!$this->csrfValid($request)) {
+            $this->flash('error', 'La sesión ha caducado.');
+
+            return $this->redirect('/admin/integracion');
+        }
+
+        $id = $request->intInput('id');
+
+        if ($id > 0) {
+            $result = $this->app->webhooks()->retryNow($id);
+
+            if ($result === null) {
+                $this->flash('aviso', 'Ese evento ya estaba entregado.');
+            } else {
+                $this->flash(
+                    $result['status'] === 'entregado' ? 'exito' : 'aviso',
+                    'Reintento del evento: ' . $result['status'] . ($result['code'] > 0 ? ' (HTTP ' . $result['code'] . ').' : ' (n8n no responde).')
+                );
+            }
+        } else {
+            $sent = $this->app->webhooks()->dispatchDue(25, 25.0, true);
+            $this->flash('exito', 'Se han intentado enviar ' . $sent . ' eventos pendientes.');
+        }
+
+        return $this->redirect('/admin/integracion');
+    }
+
     /** @param array<string, string> $args */
     public function tickets(Request $request, array $args = []): Response
     {

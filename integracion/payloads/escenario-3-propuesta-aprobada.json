@@ -1,0 +1,17 @@
+{
+  "tipo": "propuesta.aprobada",
+  "sincronizacion_id": 1,
+  "entidad": "propuesta 1",
+  "emitido_en": "2026-11-04T19:05:20+01:00",
+  "intento": 1,
+  "datos": {
+    "propuesta_id": 1,
+    "incidencia_id": 1,
+    "pedido_referencia": "KN-2026-000005",
+    "accion": "proponer_reposicion",
+    "mensaje": "Hola, Ana: te enviamos un cuaderno nuevo sin coste. Equipo Kitsune Notes",
+    "idioma": "es",
+    "telegram_chat_id": null,
+    "aprobada_por": "gestion@kitsunenotes.test"
+  }
+}

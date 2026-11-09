@@ -1,0 +1,1165 @@
+{
+  "id": "kitsune01entrada",
+  "name": "Kitsune · 01 Entrada de eventos de la tienda",
+  "description": "Recibe los eventos firmados de la tienda, los valida, los transforma y crea o actualiza las entidades del back-office (escenarios 1, 2 y 3).",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kitsune/tienda",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "cd164902-8973-4c81-9f28-c8e0742b937c",
+      "name": "Webhook · eventos de la tienda",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "9b0cb6f8-45ab-4a99-a17b-0d31249d4047"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Contrato «kitsune.evento/1». Se comprueba que el evento viene de la tienda (firma\n// HMAC-SHA256 de los bytes exactos recibidos con el secreto compartido), que no es\n// antiguo (repeticiones) y que trae los campos obligatorios de su tipo. Después se\n// transforma al formato de la API del back-office. Lo que falla no toca el back-office.\nconst crypto = require('crypto');\nconst entrada = $input.first();\nconst cabeceras = entrada.json.headers || {};\nconst errores = [];\nconst exigir = (ok, campo, error) => { if (!ok) errores.push({ campo, error }); };\n\n// 1. Cuerpo exacto tal y como llegó: la firma se calcula sobre estos bytes.\nlet crudo = '';\nif (entrada.binary && entrada.binary.data) {\n  crudo = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\n} else {\n  crudo = JSON.stringify(entrada.json.body || {});\n}\n\n// 2. Firma y antigüedad (máximo 10 minutos de diferencia).\nconst secreto = $env.KITSUNE_SECRETO_TIENDA || '';\nconst marca = String(cabeceras['x-kitsune-timestamp'] || '');\nconst recibida = String(cabeceras['x-kitsune-firma'] || '').replace(/^sha256=/, '');\nconst esperada = crypto.createHmac('sha256', secreto).update(marca + '.' + crudo).digest('hex');\nconst firmaOk = secreto !== '' && recibida.length === esperada.length\n  && crypto.timingSafeEqual(Buffer.from(recibida), Buffer.from(esperada));\nexigir(firmaOk, 'X-Kitsune-Firma', 'Firma ausente o incorrecta: el envío no viene de la tienda o se ha modificado.');\nif (firmaOk) {\n  const edad = Math.abs(Date.now() / 1000 - Number(marca));\n  exigir(Number.isFinite(edad) && edad <= 600, 'X-Kitsune-Timestamp', 'Envío caducado (más de 10 minutos): posible repetición.');\n}\n\n// 3. Sobre común del evento.\nlet ev = null;\ntry { ev = JSON.parse(crudo); } catch (e) { errores.push({ campo: 'cuerpo', error: 'No es un JSON válido.' }); }\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst REF = /^KN-\\d{4}-\\d{6}$/;\nconst ISO = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/;\nconst SUSCRITOS = ['order.created', 'payment.simulated', 'incident.created', 'support.requested',\n  'order.status_changed', 'cart.item_added', 'checkout.started'];\nconst entero = v => Number.isInteger(v);\nconst d = (ev && ev.data && typeof ev.data === 'object') ? ev.data : {};\nconst ctx = (ev && ev.contexto && !Array.isArray(ev.contexto)) ? ev.contexto : {};\nconst nombre = ev ? String(ev.event_name || '') : '';\nif (ev) {\n  exigir(ev.contrato === 'kitsune.evento/1', 'contrato', 'Se esperaba el contrato kitsune.evento/1.');\n  exigir(UUID.test(ev.event_id || ''), 'event_id', 'Debe ser un UUID.');\n  exigir(SUSCRITOS.includes(nombre), 'event_name', 'Evento no suscrito por la integración.');\n  exigir(ISO.test(ev.occurred_at || ''), 'occurred_at', 'Fecha ISO-8601 obligatoria.');\n  exigir(String(ev.source || '').startsWith('kitsune-notes'), 'source', 'Origen desconocido.');\n  if (cabeceras['x-kitsune-evento']) exigir(cabeceras['x-kitsune-evento'] === ev.event_id, 'X-Kitsune-Evento', 'No coincide con event_id.');\n}\n\n// 4. Validación y transformación según el tipo de evento.\nlet ruta = 'embudo';\nlet destino = null;\nif (ev && nombre === 'order.created') {\n  ruta = 'pedido';\n  const cli = ctx.cliente || {};\n  exigir(REF.test(d.referencia || ''), 'data.referencia', 'Formato KN-AAAA-NNNNNN.');\n  exigir(Array.isArray(d.lineas) && d.lineas.length > 0, 'data.lineas', 'El pedido no tiene líneas.');\n  exigir(entero(d.total_cents) && d.total_cents >= 0, 'data.total_cents', 'Importe en céntimos (entero).');\n  exigir(['EUR', 'GBP'].includes(d.moneda), 'data.moneda', 'Moneda no admitida.');\n  exigir(/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(cli.email || ''), 'contexto.cliente.email', 'Falta el correo del cliente.');\n  exigir(String(cli.nombre || '').trim() !== '', 'contexto.cliente.nombre', 'Falta el nombre del cliente.');\n  (Array.isArray(d.lineas) ? d.lineas : []).forEach((l, i) => {\n    exigir(typeof l.sku === 'string' && l.sku !== '', `data.lineas[${i}].sku`, 'SKU obligatorio.');\n    exigir(entero(l.cantidad) && l.cantidad > 0, `data.lineas[${i}].cantidad`, 'Cantidad entera positiva.');\n    exigir(entero(l.precio_cents) && l.precio_cents >= 0, `data.lineas[${i}].precio_cents`, 'Precio en céntimos.');\n  });\n  const lineas = Array.isArray(d.lineas) ? d.lineas : [];\n  destino = {\n    referencia: d.referencia,\n    estado: d.estado || 'creado',\n    creado_en: ev.occurred_at,\n    moneda: d.moneda,\n    total_cents: d.total_cents,\n    total_eur_cents: entero(d.total_eur_cents) ? d.total_eur_cents : d.total_cents,\n    unidades: lineas.reduce((s, l) => s + (entero(l.cantidad) ? l.cantidad : 0), 0),\n    metodo_envio: d.metodo_envio || null,\n    provincia_envio: d.provincia_envio || null,\n    idioma: d.idioma === 'en' ? 'en' : 'es',\n    cupon: d.cupon || null,\n    cliente: { tienda_id: cli.id || ev.customer_id || null, nombre: String(cli.nombre || '').trim(),\n               email: String(cli.email || '').trim().toLowerCase() },\n    lineas: lineas.map(l => ({ sku: String(l.sku || '').toUpperCase(), nombre: String(l.nombre || '').trim(),\n      cantidad: l.cantidad, precio_cents: l.precio_cents,\n      precio_eur_cents: entero(l.precio_eur_cents) ? l.precio_eur_cents : l.precio_cents })),\n    evento_origen: ev.event_id,\n  };\n} else if (ev && nombre === 'payment.simulated') {\n  ruta = 'pago';\n  exigir(REF.test(d.referencia_pedido || ''), 'data.referencia_pedido', 'Formato KN-AAAA-NNNNNN.');\n  exigir(['autorizado', 'rechazado'].includes(d.resultado), 'data.resultado', 'Debe ser autorizado o rechazado.');\n  exigir(entero(d.importe_cents), 'data.importe_cents', 'Importe en céntimos (entero).');\n  destino = { referencia: d.referencia_pedido, resultado: d.resultado, importe_cents: d.importe_cents,\n    moneda: d.moneda || 'EUR', referencia_pago: d.referencia_pago || null, motivo_rechazo: d.motivo_rechazo || null,\n    evento_origen: ev.event_id, ocurrido_en: ev.occurred_at };\n} else if (ev && (nombre === 'incident.created' || nombre === 'support.requested')) {\n  ruta = 'incidencia';\n  const t = ctx.ticket || {};\n  exigir(String(t.mensaje || '').trim() !== '', 'contexto.ticket.mensaje', 'Falta el texto de la consulta.');\n  exigir(/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(t.email || ''), 'contexto.ticket.email', 'Falta el correo del cliente.');\n  exigir(typeof (d.tipo || t.tipo) === 'string', 'data.tipo', 'Falta el tipo de consulta.');\n  destino = { referencia_ticket: d.referencia_ticket || t.referencia || null, tipo: d.tipo || t.tipo,\n    asunto: String(d.asunto || t.asunto || '').slice(0, 160), mensaje: String(t.mensaje || '').trim().slice(0, 4000),\n    canal: 'formulario_web', idioma: d.idioma === 'en' ? 'en' : 'es',\n    pedido_referencia: d.referencia_pedido || t.pedido_referencia || null,\n    cliente: { tienda_id: ev.customer_id || null, nombre: String(t.nombre || '').trim(), email: String(t.email || '').trim().toLowerCase() },\n    ocurrido_en: ev.occurred_at, evento_origen: ev.event_id };\n} else if (ev && nombre === 'order.status_changed') {\n  // Los cambios que hizo la propia integración vuelven como eco: se ignoran para no crear un bucle.\n  ruta = d.origen === 'integracion' ? 'eco' : 'estado';\n  exigir(REF.test(d.referencia || ''), 'data.referencia', 'Formato KN-AAAA-NNNNNN.');\n  exigir(typeof d.estado_nuevo === 'string' && d.estado_nuevo !== '', 'data.estado_nuevo', 'Falta el estado nuevo.');\n  destino = { referencia: d.referencia, estado_nuevo: d.estado_nuevo, origen: String(d.origen || 'tienda'),\n    nota: String(d.nota || d.ticket || '').slice(0, 400), evento_origen: ev.event_id };\n}\n\nconst copia = ev ? { event_id: ev.event_id, event_name: nombre, occurred_at: ev.occurred_at, session_id: ev.session_id || null,\n  pedido_ref: REF.test(d.referencia || '') ? d.referencia : (REF.test(d.referencia_pedido || '') ? d.referencia_pedido : null),\n  importe_eur_cents: entero(d.total_eur_cents) ? d.total_eur_cents : (entero(d.importe_eur_cents) ? d.importe_eur_cents : null),\n  resultado: typeof d.resultado === 'string' ? d.resultado : null } : null;\n\nreturn [{ json: {\n  valido: errores.length === 0,\n  errores,\n  codigo_rechazo: firmaOk ? 422 : 401,\n  event_id: ev && UUID.test(ev.event_id || '') ? ev.event_id : null,\n  event_name: nombre,\n  ruta,\n  entidad: destino ? (destino.referencia || destino.referencia_ticket || null) : null,\n  destino,\n  copia,\n} }];\n"
+      },
+      "id": "c535bfd2-ade6-454a-8e7a-aef03377915e",
+      "name": "Verificar firma y validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "3c37b078-e4d5-47af-8407-312367c7bfa0",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ddb4048a-dec6-4ebc-bc31-ff5ee9f25508",
+      "name": "¿Firma y datos correctos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '01 · Entrada de eventos de la tienda', ejecucion: String($execution.id) }, { operacion: $('Verificar firma y validar').first().json.event_name || 'evento desconocido', event_id: $('Verificar firma y validar').first().json.event_id, entidad: $('Verificar firma y validar').first().json.entidad, resultado: 'error', tipo_error: $('Verificar firma y validar').first().json.codigo_rechazo === 401 ? 'firma' : 'validacion', mensaje: JSON.stringify($('Verificar firma y validar').first().json.errores).slice(0, 1900) })) }}"
+      },
+      "id": "d7f447f5-2504-42a1-b137-f709eea86069",
+      "name": "Anotar el rechazo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        560
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.KITSUNE_TELEGRAM_CHAT_EQUIPO, text: 'Kitsune · evento rechazado por la integración\\n' + ($('Verificar firma y validar').first().json.event_name || 'desconocido') + '\\nMotivo: ' + $('Verificar firma y validar').first().json.errores.map(e => e.campo + ': ' + e.error).join('; ').slice(0, 600), disable_web_page_preview: true }) }}"
+      },
+      "id": "68bf4b13-8978-4e29-b69f-c9621f81a9e3",
+      "name": "Avisar al equipo (rechazo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        560
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Si no hay chat del equipo configurado, Telegram responde con error y el flujo sigue.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: 'rechazado', event_id: $('Verificar firma y validar').first().json.event_id, errores: $('Verificar firma y validar').first().json.errores, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": "={{ $('Verificar firma y validar').first().json.codigo_rechazo }}"
+        }
+      },
+      "id": "2a6ef73c-5662-48ef-b908-1e32f1711a20",
+      "name": "Responder: rechazado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "81488b48-a79a-4182-b35c-fb87b8dca6fe",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pedido creado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "05ef0296-69cc-4bc4-b507-6171f4722809",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "pago",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pago simulado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "4b0202e0-7f73-49f6-8a91-eb26256e60fa",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "incidencia",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Incidencia o consulta"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "ff4ff3e8-2102-4592-b26b-7980b5b90fdf",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "estado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Cambio de estado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "ead9bbd6-5d8e-4b8c-a353-60df43c8c394",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "eco",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Eco de la integración"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "5a573079-8707-4cb5-9b85-41f3f564ea2e",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "embudo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Navegación (embudo)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e2c91456-072d-487b-8abd-f452d1b32ffc",
+      "name": "¿Qué evento es?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/pedidos/{{ $json.destino.referencia }}",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.event_id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "01 · Entrada de eventos de la tienda"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.destino) }}"
+      },
+      "id": "d40ba1dc-2fc5-454c-ba96-3d4023d606f3",
+      "name": "Alta del pedido en el back-office",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/pedidos/{{ $json.destino.referencia }}/pagos",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.event_id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "01 · Entrada de eventos de la tienda"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.destino) }}"
+      },
+      "id": "7a28660d-6679-4c7f-8d4d-96566c2100dd",
+      "name": "Registrar el pago",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        140
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/incidencias",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.event_id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "01 · Entrada de eventos de la tienda"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.destino) }}"
+      },
+      "id": "3fa85967-0a1e-42a8-8f1b-de7e7e0c5b92",
+      "name": "Alta de la incidencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        280
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/pedidos/{{ $json.destino.referencia }}/estado",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.event_id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "01 · Entrada de eventos de la tienda"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.destino) }}"
+      },
+      "id": "5357192b-42d0-4f0f-8e3f-30ef9dc3428e",
+      "name": "Reflejar el cambio de estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        420
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide qué contestar a la tienda según lo que respondió el back-office:\n//   2xx            → correcto (o duplicado: el back-office ya lo tenía, idempotencia)\n//   404 de un pago → el pedido aún no ha llegado (eventos desordenados): 503 para que la tienda reintente\n//   400/422        → datos rechazados: 422, la tienda no reintenta\n//   red, 5xx, 401  → 502, la tienda reintentará más tarde\nconst caso = $('Verificar firma y validar').first().json;\nconst r = $json || {};\nlet resultado = 'ok', codigo = 200, tipo_error = null, mensaje = '', cuerpo = {};\nif (caso.ruta === 'embudo') {\n  mensaje = 'Evento de navegación: solo se guarda para el embudo de compra.';\n} else if (r.statusCode === undefined) {\n  resultado = 'error'; codigo = 502; tipo_error = 'backoffice_no_disponible';\n  mensaje = typeof r.error === 'string' ? r.error : JSON.stringify(r.error || r).slice(0, 400);\n} else {\n  const s = Number(r.statusCode);\n  cuerpo = typeof r.body === 'string' ? (() => { try { return JSON.parse(r.body); } catch (e) { return { mensaje: r.body }; } })() : (r.body || {});\n  if (s >= 200 && s < 300) {\n    resultado = ['duplicado', 'sin_cambios'].includes(cuerpo.resultado) ? 'duplicado' : 'ok';\n    mensaje = (cuerpo.resultado || 'ok') + (cuerpo.id ? ' · id ' + cuerpo.id : '');\n  } else if (s === 404 && ['pago', 'estado'].includes(caso.ruta)) {\n    resultado = 'error'; codigo = 503; tipo_error = 'orden_eventos';\n    mensaje = 'El pedido aún no está en el back-office; la tienda volverá a enviar el evento.';\n  } else if (s === 400 || s === 422) {\n    resultado = 'error'; codigo = 422; tipo_error = 'validacion_backoffice';\n    mensaje = JSON.stringify(cuerpo.detalles || cuerpo.mensaje || cuerpo).slice(0, 600);\n  } else if (s === 401 || s === 403) {\n    resultado = 'error'; codigo = 502; tipo_error = 'credenciales'; mensaje = 'El back-office rechaza la clave de n8n (KITSUNE_CLAVE_GESTION).';\n  } else {\n    resultado = 'error'; codigo = 502; tipo_error = 'backoffice_http_' + s; mensaje = String(cuerpo.mensaje || ('HTTP ' + s));\n  }\n}\nreturn [{ json: { ...caso, resultado, codigo, tipo_error, mensaje,\n  incidencia_nueva: caso.ruta === 'incidencia' && cuerpo.resultado === 'creada' ? { id: cuerpo.id, cliente_id: cuerpo.cliente_id || null } : null } }];\n"
+      },
+      "id": "f7a750dc-bfb8-4545-b771-c5cd5288b079",
+      "name": "Evaluar la respuesta del back-office",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '01 · Entrada de eventos de la tienda', ejecucion: String($execution.id) }, { operacion: 'order.status_changed', event_id: $('Verificar firma y validar').first().json.event_id, entidad: $('Verificar firma y validar').first().json.entidad, resultado: 'ignorado', mensaje: 'Eco de un cambio hecho por la propia integración: no se reenvía (evita bucles).' })) }}"
+      },
+      "id": "17c7a88c-3bd0-4d7c-95fc-c34e1ef0788f",
+      "name": "Anotar el eco como ignorado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        700
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: 'procesado', resultado: 'ignorado', event_id: $('Verificar firma y validar').first().json.event_id, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "22354118-b5fe-4b90-8f4f-25182bbe0dc1",
+      "name": "Responder: ignorado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "d089a810-f9b2-4775-a8bb-df28f5111a06",
+              "leftValue": "={{ $json.resultado !== 'error' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "68a689ae-5377-427c-a213-f369f69b04c0",
+      "name": "¿Back-office correcto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/eventos",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.copia) }}"
+      },
+      "id": "d13d038e-0f59-4f21-8031-92dd5bab3bd4",
+      "name": "Guardar copia del evento (embudo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        160
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '01 · Entrada de eventos de la tienda', ejecucion: String($execution.id) }, { operacion: $('Evaluar la respuesta del back-office').first().json.event_name, event_id: $('Evaluar la respuesta del back-office').first().json.event_id, entidad: $('Evaluar la respuesta del back-office').first().json.entidad, resultado: $('Evaluar la respuesta del back-office').first().json.resultado, mensaje: $('Evaluar la respuesta del back-office').first().json.mensaje })) }}"
+      },
+      "id": "0c2b0300-cb81-4e04-9a7f-3e8fc025847b",
+      "name": "Anotar resultado correcto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        160
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: 'procesado', resultado: $('Evaluar la respuesta del back-office').first().json.resultado, event_id: $('Evaluar la respuesta del back-office').first().json.event_id, detalle: $('Evaluar la respuesta del back-office').first().json.mensaje, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "4ffbd4de-5dda-42d5-bb83-6b2dc5d5d574",
+      "name": "Responder: procesado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1740,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "7446a5ce-9502-4f46-94bb-48c230a63029",
+              "leftValue": "={{ !!$('Evaluar la respuesta del back-office').first().json.incidencia_nueva }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22881cd4-3de7-4848-a63b-85aef10ba3d5",
+      "name": "¿Incidencia nueva?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.KITSUNE_URL_N8N || 'http://localhost:5678').replace(/\\/$/, '') }}/webhook/kitsune/agente",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Kitsune-Interno",
+              "value": "={{ $env.KITSUNE_SECRETO_AGENTE }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ incidencia_id: $('Evaluar la respuesta del back-office').first().json.incidencia_nueva.id, cliente_id: $('Evaluar la respuesta del back-office').first().json.incidencia_nueva.cliente_id, pedido_referencia: $('Evaluar la respuesta del back-office').first().json.destino.pedido_referencia, tipo: $('Evaluar la respuesta del back-office').first().json.destino.tipo, asunto: $('Evaluar la respuesta del back-office').first().json.destino.asunto, mensaje: $('Evaluar la respuesta del back-office').first().json.destino.mensaje, idioma: $('Evaluar la respuesta del back-office').first().json.destino.idioma, canal: 'formulario_web' }) }}"
+      },
+      "id": "4f39fc2b-4919-40b1-bb99-d58a05ba4cce",
+      "name": "Pedir análisis al agente (sin esperar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2700,
+        80
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "El flujo 02 responde al instante y analiza en segundo plano.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '01 · Entrada de eventos de la tienda', ejecucion: String($execution.id) }, { operacion: $('Evaluar la respuesta del back-office').first().json.event_name, event_id: $('Evaluar la respuesta del back-office').first().json.event_id, entidad: $('Evaluar la respuesta del back-office').first().json.entidad, resultado: 'error', tipo_error: $('Evaluar la respuesta del back-office').first().json.tipo_error, mensaje: $('Evaluar la respuesta del back-office').first().json.mensaje })) }}"
+      },
+      "id": "9be3a191-3a2b-4d83-9b15-3f76a50c5875",
+      "name": "Anotar el error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        440
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.KITSUNE_TELEGRAM_CHAT_EQUIPO, text: 'Kitsune · error al integrar ' + $('Evaluar la respuesta del back-office').first().json.event_name + ' (' + ($('Evaluar la respuesta del back-office').first().json.entidad || '') + ')\\n' + $('Evaluar la respuesta del back-office').first().json.tipo_error + ': ' + String($('Evaluar la respuesta del back-office').first().json.mensaje).slice(0, 500) + '\\nLa tienda lo reintentará si el error es temporal.', disable_web_page_preview: true }) }}"
+      },
+      "id": "7ad39767-d43e-48e1-93e5-422f85743a92",
+      "name": "Avisar al equipo (error)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        440
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ estado: $('Evaluar la respuesta del back-office').first().json.codigo === 422 ? 'rechazado' : 'reintentar', event_id: $('Evaluar la respuesta del back-office').first().json.event_id, tipo_error: $('Evaluar la respuesta del back-office').first().json.tipo_error, detalle: $('Evaluar la respuesta del back-office').first().json.mensaje, ejecucion: $execution.id }) }}",
+        "options": {
+          "responseCode": "={{ $('Evaluar la respuesta del back-office').first().json.codigo }}"
+        }
+      },
+      "id": "32f9cec2-d23d-4114-a6b6-ca4f4c3220ae",
+      "name": "Responder: error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1740,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook · eventos de la tienda": {
+      "main": [
+        [
+          {
+            "node": "Verificar firma y validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar firma y validar": {
+      "main": [
+        [
+          {
+            "node": "¿Firma y datos correctos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma y datos correctos?": {
+      "main": [
+        [
+          {
+            "node": "¿Qué evento es?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: rechazado": {
+      "main": [
+        [
+          {
+            "node": "Anotar el rechazo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar el rechazo": {
+      "main": [
+        [
+          {
+            "node": "Avisar al equipo (rechazo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Qué evento es?": {
+      "main": [
+        [
+          {
+            "node": "Alta del pedido en el back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar el pago",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alta de la incidencia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reflejar el cambio de estado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alta del pedido en el back-office": {
+      "main": [
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar el pago": {
+      "main": [
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alta de la incidencia": {
+      "main": [
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reflejar el cambio de estado": {
+      "main": [
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar la respuesta del back-office",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: ignorado": {
+      "main": [
+        [
+          {
+            "node": "Anotar el eco como ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar la respuesta del back-office": {
+      "main": [
+        [
+          {
+            "node": "¿Back-office correcto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Back-office correcto?": {
+      "main": [
+        [
+          {
+            "node": "Responder: procesado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: procesado": {
+      "main": [
+        [
+          {
+            "node": "Guardar copia del evento (embudo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar copia del evento (embudo)": {
+      "main": [
+        [
+          {
+            "node": "Anotar resultado correcto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar resultado correcto": {
+      "main": [
+        [
+          {
+            "node": "¿Incidencia nueva?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Incidencia nueva?": {
+      "main": [
+        [
+          {
+            "node": "Pedir análisis al agente (sin esperar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: error": {
+      "main": [
+        [
+          {
+            "node": "Anotar el error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar el error": {
+      "main": [
+        [
+          {
+            "node": "Avisar al equipo (error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "kitsune00errores"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

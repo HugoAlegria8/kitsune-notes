@@ -1,0 +1,33 @@
+{
+  "contrato": "kitsune.evento/1",
+  "event_id": "ff939221-d6e4-445e-a236-0c200ae46a1a",
+  "event_name": "incident.created",
+  "schema_version": "1.1",
+  "source": "kitsune-notes.web",
+  "occurred_at": "2026-11-04T19:06:55+01:00",
+  "session_id": "p37f4a4ns62ddumsc8o0l0nvvr",
+  "actor_type": "invitado",
+  "customer_id": 1,
+  "product_id": null,
+  "order_id": 5,
+  "data": {
+    "referencia_ticket": "INC-2026-000002",
+    "tipo": "producto_danado",
+    "asunto": "El cuaderno llegó roto",
+    "referencia_pedido": "KN-2026-000005",
+    "canal": "formulario_web",
+    "idioma": "es",
+    "longitud_mensaje": 86
+  },
+  "contexto": {
+    "ticket": {
+      "referencia": "INC-2026-000002",
+      "nombre": "Ana Demo Ruiz",
+      "email": "ana.demo@kitsunenotes.test",
+      "tipo": "producto_danado",
+      "asunto": "El cuaderno llegó roto",
+      "mensaje": "Hola, el cuaderno Neko ha llegado con la tapa doblada y una esquina rota. ¿Me ayudáis?",
+      "pedido_referencia": "KN-2026-000005"
+    }
+  }
+}

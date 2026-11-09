@@ -7,6 +7,7 @@ namespace KitsuneNotes\Controller;
 use KitsuneNotes\Core\Request;
 use KitsuneNotes\Core\Response;
 use KitsuneNotes\Service\EventRecorder;
+use KitsuneNotes\Service\OrderService;
 use KitsuneNotes\Support\Money;
 
 /**
@@ -149,17 +150,122 @@ final class ApiController extends Controller
         ], $status === 'ok' ? 200 : 503);
     }
 
-    private function authorized(Request $request): bool
+    /**
+     * Tarea 2 · escenario 2. El personal cambia el estado de un pedido en el
+     * back-office y n8n lo aplica aquí. Se respetan las mismas transiciones
+     * que en el panel de la tienda; repetir la misma petición no cambia nada
+     * (idempotente) y una transición no permitida devuelve 409 para que el
+     * back-office la marque «en conflicto» en vez de reintentarla.
+     *
+     * @param array<string, string> $args
+     */
+    public function changeOrderStatus(Request $request, array $args = []): Response
     {
+        if (!$this->authorized($request)) {
+            return Response::json([
+                'error'   => 'no_autorizado',
+                'mensaje' => 'Falta el token de acceso o no es válido. Envíalo en la cabecera X-API-Token.',
+            ], 401);
+        }
+
+        $data = json_decode((string) file_get_contents('php://input'), true);
+
+        if (!is_array($data)) {
+            return Response::json(['error' => 'json_invalido', 'mensaje' => 'El cuerpo debe ser un objeto JSON.'], 400);
+        }
+
+        $reference = strtoupper(trim($args['reference'] ?? ''));
+        $newStatus = (string) ($data['estado'] ?? '');
+        $statuses  = array_keys(OrderService::allowedTransitions());
+        $errors    = [];
+
+        if (!in_array($newStatus, $statuses, true)) {
+            $errors['estado'] = 'Estado no válido. Valores posibles: ' . implode(', ', $statuses) . '.';
+        }
+
+        foreach (['nota' => 300, 'transportista' => 60, 'seguimiento' => 60, 'operador' => 120] as $field => $max) {
+            if (isset($data[$field]) && (!is_string($data[$field]) || mb_strlen($data[$field]) > $max)) {
+                $errors[$field] = 'Debe ser un texto de ' . $max . ' caracteres como máximo.';
+            }
+        }
+
+        if ($newStatus === 'enviado' && trim((string) ($data['seguimiento'] ?? '')) === '') {
+            $errors['seguimiento'] = 'Es obligatorio para marcar el pedido como enviado.';
+        }
+
+        if ($errors !== []) {
+            return Response::json(['error' => 'validacion', 'mensaje' => 'Los datos no son válidos.', 'detalles' => $errors], 422);
+        }
+
+        $order = $this->app->orders()->findByReference($reference);
+
+        if ($order === null) {
+            return Response::json(['error' => 'pedido_no_encontrado', 'mensaje' => 'No existe el pedido ' . $reference . '.'], 404);
+        }
+
+        $current = (string) $order['status'];
+
+        if ($current === $newStatus) {
+            return Response::json(['resultado' => 'sin_cambios', 'referencia' => $reference, 'estado' => $current]);
+        }
+
+        $note = implode(' · ', array_filter([
+            'Desde Kitsune Gestión' . (!empty($data['operador']) ? ' (' . $data['operador'] . ')' : ''),
+            !empty($data['seguimiento']) ? 'Envío: ' . trim(($data['transportista'] ?? '') . ' ' . $data['seguimiento']) : '',
+            trim((string) ($data['nota'] ?? '')),
+        ]));
+
+        if (!$this->app->orderService()->changeStatus($order, $newStatus, 'integracion', $note)) {
+            return Response::json([
+                'error'         => 'transicion_no_permitida',
+                'mensaje'       => sprintf('La tienda no permite pasar de «%s» a «%s».', $current, $newStatus),
+                'estado_actual' => $current,
+                'permitidas'    => OrderService::allowedTransitions()[$current] ?? [],
+            ], 409);
+        }
+
+        // «origen: integracion» permite a n8n reconocer el eco de su propio cambio y no reenviarlo.
+        $this->app->events()->record(
+            EventRecorder::ORDER_STATUS_CHANGED,
+            [
+                'referencia'      => $reference,
+                'estado_anterior' => $current,
+                'estado_nuevo'    => $newStatus,
+                'origen'          => 'integracion',
+                'nota'            => $note,
+            ],
+            ['order_id' => (int) $order['id'], 'customer_id' => (int) $order['customer_id'], 'actor_type' => 'sistema']
+        );
+
+        $shippingMail = null;
+
+        if ($newStatus === 'enviado') {
+            try {
+                $fresh        = $this->app->orders()->findById((int) $order['id']);
+                $shippingMail = $fresh !== null ? $this->app->notifier()->orderShipped($fresh) : null;
+            } catch (\Throwable $e) {
+                error_log('[kitsune-notes] Aviso de envío desde la integración: ' . $e->getMessage());
+            }
+        }
+
+        return Response::json([
+            'resultado'       => 'actualizado',
+            'referencia'      => $reference,
+            'estado_anterior' => $current,
+            'estado'          => $newStatus,
+            'aviso_correo'    => $shippingMail !== null ? 'generado' : null,
+        ]);
+    }
+
+	private function authorized(Request $request): bool
+	{
         $expected = (string) $this->app->config('security.api_token');
         $provided = $request->header('X-API-Token');
 
-        if ($provided === '') {
-            $provided = (string) $request->query('token', '');
-        }
-
-        return $provided !== '' && hash_equals($expected, $provided);
-    }
+        return $expected !== ''
+            && $provided !== ''
+            && hash_equals($expected, $provided);
+	}
 
     /** @param list<array<string, mixed>> $rows */
     private function toCsv(array $rows): string

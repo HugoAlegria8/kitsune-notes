@@ -1,0 +1,486 @@
+{
+  "id": "kitsune04telegra",
+  "name": "Kitsune · 04 Telegram de clientes",
+  "description": "Bot de Telegram: vincula el chat con el pedido, responde /estado y añade los mensajes del cliente a su incidencia.",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kitsune/telegram",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "9de98f95-e7e7-46b0-9565-d118efe65044",
+      "name": "Webhook · Telegram",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "7f7d14b7-fba7-45cb-bb66-e02d5ca7ea4b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Telegram firma cada llamada con el secret_token registrado en setWebhook.\nconst crypto = require('crypto');\nconst h = $json.headers || {};\nconst u = $json.body || {};\nconst secreto = $env.KITSUNE_TELEGRAM_WEBHOOK_SECRET || '';\nif (!secreto || h['x-telegram-bot-api-secret-token'] !== secreto) {\n  return [{ json: { accion: 'ignorar', motivo: 'Llamada sin el secreto del webhook de Telegram.' } }];\n}\nconst m = u.message || u.edited_message;\nif (!m || !m.chat || typeof m.text !== 'string') return [{ json: { accion: 'ignorar', motivo: 'Actualización sin texto.' } }];\nconst texto = m.text.trim();\nlet accion = 'mensaje', referencia = null;\nif (/^\\/start\\s+\\S+/.test(texto)) {\n  // Enlace del pedido: KN-AAAA-NNNNNN_ + 12 caracteres de HMAC-SHA256 con el secreto compartido con la tienda.\n  const p = texto.split(/\\s+/)[1].match(/^(KN-\\d{4}-\\d{6})_([0-9a-f]{12})$/);\n  const esperada = p ? crypto.createHmac('sha256', $env.KITSUNE_SECRETO_TELEGRAM || '').update('telegram|' + p[1]).digest('hex').slice(0, 12) : '';\n  if (p && $env.KITSUNE_SECRETO_TELEGRAM && crypto.timingSafeEqual(Buffer.from(esperada), Buffer.from(p[2]))) { accion = 'vincular'; referencia = p[1]; }\n  else accion = 'codigo_invalido';\n} else if (/^\\/(start|ayuda|help)\\b/.test(texto)) accion = 'ayuda';\nelse if (/^\\/estado\\b/.test(texto)) accion = 'estado';\nelse if (/^\\/equipo\\b/.test(texto)) accion = 'equipo';\nelse if (m.chat.type !== 'private') accion = 'ignorar';\nconst idioma = String((m.from && m.from.language_code) || 'es').startsWith('en') ? 'en' : 'es';\nreturn [{ json: { accion, chat_id: String(m.chat.id), texto: texto.slice(0, 2000), referencia, idioma } }];\n"
+      },
+      "id": "f2e60c15-e519-4dd3-8320-fded006f0aa6",
+      "name": "Leer el mensaje de Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "7543953c-3f56-4801-8525-913151bd6d2a",
+                    "leftValue": "={{ $json.accion }}",
+                    "rightValue": "vincular",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Vincular el pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "0e0b1905-3af5-4212-87a2-4e416a38e5a7",
+                    "leftValue": "={{ $json.accion }}",
+                    "rightValue": "estado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Consultar estado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "d612dd53-8c46-422a-af13-d68a40f8deee",
+                    "leftValue": "={{ $json.accion }}",
+                    "rightValue": "mensaje",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Mensaje para el equipo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "1b5b401a-90d4-487d-9100-14a47a4b2c8c",
+                    "leftValue": "={{ $json.accion }}",
+                    "rightValue": "ignorar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Ignorar"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Ayuda u otros"
+        }
+      },
+      "id": "fd671d4d-f90c-430d-b31c-52e063820b94",
+      "name": "¿Qué pide el cliente?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/telegram/vinculos",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "04 · Telegram de clientes"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ pedido_referencia: $json.referencia, chat_id: $json.chat_id }) }}"
+      },
+      "id": "a7179475-cee7-429e-9492-a637a7155c81",
+      "name": "Vincular el chat en el back-office",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/telegram/{{ $json.chat_id }}/pedidos",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "04 · Telegram de clientes"
+            }
+          ]
+        }
+      },
+      "id": "b4a14427-f2d4-475c-b447-b29968026e37",
+      "name": "Consultar los pedidos del chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/telegram/mensajes",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "X-N8n-Flujo",
+              "value": "04 · Telegram de clientes"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, texto: $json.texto }) }}"
+      },
+      "id": "8e3ed994-0053-4d62-aa3d-4eaf25742410",
+      "name": "Añadir el mensaje a la incidencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        380
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Textos fijos (no los escribe la IA): responden a acciones del propio cliente.\nconst m = $('Leer el mensaje de Telegram').first().json;\nconst r = $json || {};\nconst s = Number(r.statusCode || 0);\nconst b = (r.body && typeof r.body === 'object') ? r.body : {};\nconst en = m.idioma === 'en';\nlet texto;\nif (m.accion === 'vincular') {\n  if (s === 200) texto = b.idioma === 'en'\n    ? `Hi ${b.cliente_nombre}! You're all set: we'll send updates about order ${b.pedido_referencia} here. Current status: ${b.estado_pedido}.`\n    : `¡Hola, ${b.cliente_nombre}! Listo: te avisaremos por aquí de tu pedido ${b.pedido_referencia}. Estado actual: ${b.estado_pedido}.`;\n  else if (s === 404) texto = en ? 'We cannot find that order yet. Please try again in a minute.' : 'Todavía no encontramos ese pedido. Prueba de nuevo en un minuto.';\n  else texto = en ? 'Sorry, we could not link this chat right now.' : 'Ahora mismo no hemos podido vincular este chat. Inténtalo más tarde.';\n} else if (m.accion === 'estado') {\n  texto = s === 200\n    ? ((b.pedidos || []).length ? 'Tus pedidos:\\n' + b.pedidos.map(p => `· ${p.referencia}: ${p.estado} (${p.total})`).join('\\n') : 'No tienes pedidos todavía.')\n    : 'Este chat no está vinculado a ningún pedido. Abre el enlace de Telegram desde la página de tu pedido en la tienda.';\n} else if (m.accion === 'mensaje') {\n  texto = s === 200\n    ? `Gracias, ${b.cliente_nombre}. ${b.nueva ? 'Hemos abierto la consulta' : 'Lo hemos añadido a tu incidencia'} #${b.incidencia_id}; el equipo te contestará por aquí.`\n    : 'Para escribirnos por aquí, abre primero el enlace de Telegram desde la página de tu pedido en la tienda.';\n} else if (m.accion === 'equipo') {\n  texto = `Identificador de este chat: ${m.chat_id}\\nPara recibir aquí los avisos del equipo, ponlo en la variable KITSUNE_TELEGRAM_CHAT_EQUIPO de n8n.`;\n} else if (m.accion === 'codigo_invalido') {\n  texto = en ? 'That link is not valid. Open it again from your order page.' : 'Ese enlace no es válido. Ábrelo de nuevo desde la página de tu pedido.';\n} else {\n  texto = en ? 'Hi! This is the Kitsune Notes demo bot (academic prototype). Open the Telegram link on your order page to get updates here. Command: /estado'\n             : '¡Hola! Soy el bot de pruebas de Kitsune Notes (prototipo académico). Abre el enlace de Telegram de la página de tu pedido para recibir avisos aquí. Comando: /estado';\n}\nconst ok = ['ayuda', 'equipo', 'codigo_invalido'].includes(m.accion) || (s >= 200 && s < 300);\nreturn [{ json: { chat_id: m.chat_id, texto, accion: m.accion, resultado: ok ? 'ok' : 'error', codigo_backoffice: s || null } }];\n"
+      },
+      "id": "6a2b0518-8d9e-4ec9-ae39-9de54282a39b",
+      "name": "Preparar la respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_TELEGRAM_API || 'https://api.telegram.org' }}/bot{{ $env.KITSUNE_TELEGRAM_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.texto, disable_web_page_preview: true }) }}"
+      },
+      "id": "71ead298-9ebd-4915-8632-503bdca58046",
+      "name": "Telegram · responder al cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITSUNE_URL_GESTION }}/api/v1/registro",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.KITSUNE_CLAVE_GESTION }}"
+            },
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ flujo: '04 · Telegram de clientes', ejecucion: String($execution.id) }, { operacion: 'telegram ' + $('Preparar la respuesta').first().json.accion, entidad: 'telegram', resultado: $('Preparar la respuesta').first().json.resultado, tipo_error: $('Preparar la respuesta').first().json.resultado === 'error' ? 'telegram_' + ($('Preparar la respuesta').first().json.codigo_backoffice || 'sin_respuesta') : null, mensaje: 'Respuesta enviada al cliente (' + ($json.statusCode || 'sin respuesta de Telegram') + ')' })) }}"
+      },
+      "id": "a1d2e883-75e4-458d-8a2c-beaedf9ff561",
+      "name": "Anotar la conversación",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook · Telegram": {
+      "main": [
+        [
+          {
+            "node": "Leer el mensaje de Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer el mensaje de Telegram": {
+      "main": [
+        [
+          {
+            "node": "¿Qué pide el cliente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Qué pide el cliente?": {
+      "main": [
+        [
+          {
+            "node": "Vincular el chat en el back-office",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar los pedidos del chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Añadir el mensaje a la incidencia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [],
+        [
+          {
+            "node": "Preparar la respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vincular el chat en el back-office": {
+      "main": [
+        [
+          {
+            "node": "Preparar la respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar los pedidos del chat": {
+      "main": [
+        [
+          {
+            "node": "Preparar la respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Añadir el mensaje a la incidencia": {
+      "main": [
+        [
+          {
+            "node": "Preparar la respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar la respuesta": {
+      "main": [
+        [
+          {
+            "node": "Telegram · responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram · responder al cliente": {
+      "main": [
+        [
+          {
+            "node": "Anotar la conversación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "kitsune00errores"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}
